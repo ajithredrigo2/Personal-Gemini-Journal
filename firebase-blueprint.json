@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "interaction": {
+      "title": "Interaction Entry",
+      "description": "User journal reflection dialogue and executive synthesis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "mode": { "type": "string" },
+        "mood": { "type": "string" },
+        "messages": { "type": "array" },
+        "summary": { "type": "string" },
+        "keyInsights": { "type": "array" },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "mode", "messages", "createdAt", "updatedAt"]
+    },
+    "insight": {
+      "title": "Reflection Intelligence Insight",
+      "description": "Cross-journal pattern synthesis, recurring themes, goals, and focus suggestions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "periodStart": { "type": "string" },
+        "periodEnd": { "type": "string" },
+        "themes": { "type": "array" },
+        "goals": { "type": "array" },
+        "actionItems": { "type": "array" },
+        "recurringChallenges": { "type": "array" },
+        "positivePatterns": { "type": "array" },
+        "suggestedFocus": { "type": "string" },
+        "weeklyReflection": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "periodStart", "periodEnd", "themes", "goals", "actionItems", "suggestedFocus", "createdAt"]
+    },
+    "actionItem": {
+      "title": "Extracted Action Item",
+      "description": "Concrete action items extracted from journal sessions and intelligence insights",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "sourceJournalId": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "completed"] },
+        "createdAt": { "type": "string" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/interactions/{interactionId}": {
+      "schema": "interaction",
+      "description": "Private user journal entries and AI conversation threads"
+    },
+    "/users/{userId}/insights/{insightId}": {
+      "schema": "insight",
+      "description": "Generated cross-journal reflection intelligence and pattern insights"
+    },
+    "/users/{userId}/actionItems/{actionItemId}": {
+      "schema": "actionItem",
+      "description": "User-isolated actionable tasks extracted from journal sessions"
+    }
+  }
+}

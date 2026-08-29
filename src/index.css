@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    color: #3A3A35;
+    background-color: #F5F5F0;
+  }
+
+  h1, h2, h3, .font-serif, .font-display {
+    font-family: 'Cormorant Garamond', Georgia, Cambria, 'Times New Roman', Times, serif;
+    letter-spacing: -0.01em;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom Natural Tones theme classes */
+.bg-natural-base { background-color: #F5F5F0; }
+.bg-natural-card { background-color: #FFFFFF; }
+.bg-natural-sidebar { background-color: #EFEEE7; }
+.bg-natural-sand { background-color: #E8E6DF; }
+.bg-natural-olive { background-color: #5A5A40; }
+.bg-natural-olive-light { background-color: #EBEBE3; }
+.text-natural-ink { color: #3A3A35; }
+.text-natural-muted { color: #73726B; }
+.text-natural-olive { color: #5A5A40; }
+.border-natural { border-color: #D6D5CD; }
+.border-natural-sand { border-color: #E2E0D8; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(115, 114, 107, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(90, 90, 64, 0.5);
+}
