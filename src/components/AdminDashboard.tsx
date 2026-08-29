@@ -109,6 +109,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [currentUser, currentRole]);
 
   const handleUpdateRole = async (targetUserId: string, targetEmail: string | undefined, targetDisplayName: string | undefined, newRole: UserRole) => {
+    // Permission validation: Only admins/superadmins or self-switching is allowed
+    if (targetUserId !== currentUser.uid && !isAdmin) {
+      await logAuditEvent({
+        eventType: 'permission_denied',
+        severity: 'security',
+        actorId: currentUser.uid,
+        actorEmail: currentUser.email || 'member@local',
+        details: `Member attempted unauthorized role elevation for ${targetEmail || targetUserId}`,
+      });
+      setStatusMessage('Permission Denied: Only Admin or Superadmin can change other users\' roles.');
+      setTimeout(() => setStatusMessage(null), 4000);
+      return;
+    }
+
     try {
       await setUserRole(targetUserId, newRole, {
         email: targetEmail,
@@ -425,6 +439,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
+          {/* Member read-only notice */}
+          {!isAdmin && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-900 text-xs">
+              <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">Viewing in Member (Read-Only) Mode: </span>
+                <span>
+                  You can inspect the role directory, but modifying roles requires Administrator privileges. Use the <strong>Evaluation Role Switcher</strong> at the top to toggle to <code>admin</code> or <code>superadmin</code>.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Roles Permission Matrix Card */}
           <div className="p-4 bg-[#F2F1EA] rounded-xl border border-[#D6D5CD] text-xs space-y-2">
             <h3 className="font-bold text-[#3A3A35] flex items-center gap-2">
@@ -508,16 +535,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="inline-flex items-center gap-1.5 justify-end">
                         {r.role !== 'admin' && (
                           <button
+                            disabled={!isAdmin}
                             onClick={() => handleUpdateRole(r.userId, r.email, r.displayName, 'admin')}
-                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-md font-medium text-[11px] transition-colors cursor-pointer"
+                            className={`px-2.5 py-1 rounded-md font-medium text-[11px] transition-colors ${
+                              isAdmin
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-pointer'
+                                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60'
+                            }`}
+                            title={!isAdmin ? 'Admin privileges required' : 'Elevate to Admin'}
                           >
                             Make Admin
                           </button>
                         )}
                         {r.role !== 'member' && (
                           <button
+                            disabled={!isAdmin}
                             onClick={() => handleUpdateRole(r.userId, r.email, r.displayName, 'member')}
-                            className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300 rounded-md font-medium text-[11px] transition-colors cursor-pointer"
+                            className={`px-2.5 py-1 rounded-md font-medium text-[11px] transition-colors ${
+                              isAdmin
+                                ? 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300 cursor-pointer'
+                                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60'
+                            }`}
+                            title={!isAdmin ? 'Admin privileges required' : 'Demote to Member'}
                           >
                             Demote to Member
                           </button>

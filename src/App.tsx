@@ -14,6 +14,7 @@ import {
   subscribeToUserInsights,
   subscribeToUserActionItems,
   deleteInteraction,
+  initializeUserRole,
   subscribeToUserRole,
   subscribeToUserWebhooks,
   logAuditEvent,
@@ -54,7 +55,7 @@ export default function App() {
 
   // Subscribe to Firebase Auth State
   useEffect(() => {
-    const unsubscribeAuth = subscribeAuthState((firebaseUser: User | null) => {
+    const unsubscribeAuth = subscribeAuthState(async (firebaseUser: User | null) => {
       if (firebaseUser) {
         setCurrentUser({
           uid: firebaseUser.uid,
@@ -63,9 +64,17 @@ export default function App() {
           photoURL: firebaseUser.photoURL,
         });
 
-        // Superadmin bypass for creator email or default to admin
-        if (firebaseUser.email === 'ajith.redrigo@yahoo.com') {
-          setUserRoleState('superadmin');
+        // Initialize / bootstrap role in Firestore (superadmin for creator, admin for evaluators)
+        try {
+          const role = await initializeUserRole(
+            firebaseUser.uid,
+            firebaseUser.email,
+            firebaseUser.displayName
+          );
+          setUserRoleState(role);
+        } catch (err) {
+          console.warn('Could not initialize user role doc:', err);
+          setUserRoleState(firebaseUser.email === 'ajith.redrigo@yahoo.com' ? 'superadmin' : 'admin');
         }
 
         logAuditEvent({
@@ -145,12 +154,8 @@ export default function App() {
     const unsubscribeRole = subscribeToUserRole(
       currentUser.uid,
       (fetchedRole) => {
-        if (currentUser.email === 'ajith.redrigo@yahoo.com') {
-          setUserRoleState('superadmin');
-        } else if (fetchedRole) {
+        if (fetchedRole) {
           setUserRoleState(fetchedRole);
-        } else {
-          setUserRoleState('admin');
         }
       }
     );

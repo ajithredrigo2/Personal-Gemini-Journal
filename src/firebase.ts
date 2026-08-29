@@ -282,6 +282,38 @@ export function subscribeToUserActionItems(
 // Role-Based Access Control (RBAC) `/roles/{userId}`
 // ---------------------------------------------------------------------------
 
+export async function initializeUserRole(
+  userId: string,
+  email?: string | null,
+  displayName?: string | null
+): Promise<UserRole> {
+  if (!userId) return 'member';
+  try {
+    const roleDocRef = doc(db, 'roles', userId);
+    const snap = await getDoc(roleDocRef);
+    if (snap.exists()) {
+      const data = snap.data() as UserRoleDocument;
+      return data.role || 'member';
+    } else {
+      // Creator defaults to superadmin, challenge evaluators and new users default to admin
+      const initialRole: UserRole = email === 'ajith.redrigo@yahoo.com' ? 'superadmin' : 'admin';
+      const payload: UserRoleDocument = {
+        userId,
+        role: initialRole,
+        email: email || '',
+        displayName: displayName || '',
+        grantedAt: new Date().toISOString(),
+        grantedBy: 'system_bootstrap',
+      };
+      await setDoc(roleDocRef, sanitizePayload(payload), { merge: true });
+      return initialRole;
+    }
+  } catch (err) {
+    console.warn('Failed to initialize user role in Firestore:', err);
+    return email === 'ajith.redrigo@yahoo.com' ? 'superadmin' : 'admin';
+  }
+}
+
 export async function getUserRole(userId: string): Promise<UserRole> {
   if (!userId) return 'member';
   try {

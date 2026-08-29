@@ -6,28 +6,40 @@ service cloud.firestore {
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.email == 'ajith.redrigo@yahoo.com' ||
-        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['admin', 'superadmin']
+        (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['admin', 'superadmin'])
+      );
+    }
+
+    // Helper function to check if caller is superadmin
+    function isSuperAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == 'ajith.redrigo@yahoo.com' ||
+        (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'superadmin')
       );
     }
 
     // User-isolated collections: interactions, insights, actionItems, webhooks, settings
     match /users/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isSuperAdmin());
     }
 
     // Role-based Access Control (RBAC) collection
     match /roles/{userId} {
       // Any authenticated user can read their own role; Admins can read all user roles
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      // Users can bootstrap their own default role on sign up; Admins can update roles
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update, delete: if isAdmin() || (request.auth != null && request.auth.uid == userId);
+      // Users can bootstrap their own default role on sign up; Admins can create/assign roles
+      allow create: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      // Users can update their own role (for switcher) and Admins can update any role
+      allow update, delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
 
     // Security & System Audit Logs
     match /audit_logs/{logId} {
-      allow read: if isAdmin();
+      allow read: if request.auth != null;
       allow create: if request.auth != null;
+      allow update, delete: if isSuperAdmin();
     }
   }
 }
