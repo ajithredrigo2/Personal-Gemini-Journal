@@ -19,7 +19,7 @@ import {
   getDocs,
   Unsubscribe,
 } from 'firebase/firestore';
-import { InteractionEntry, InsightEntry, ActionItemEntry } from './types';
+import { InteractionEntry, InsightEntry, ActionItemEntry, JournalLocation } from './types';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase App singleton
@@ -77,6 +77,23 @@ export async function deleteInteraction(userId: string, interactionId: string): 
   if (!userId || !interactionId) throw new Error('User ID and Interaction ID are required for deletion');
   const interactionDocRef = doc(db, 'users', userId, 'interactions', interactionId);
   await deleteDoc(interactionDocRef);
+}
+
+export async function updateEntryLocation(
+  userId: string,
+  interactionId: string,
+  location: JournalLocation | null
+): Promise<void> {
+  if (!userId || !interactionId) throw new Error('User ID and Interaction ID are required');
+  const interactionDocRef = doc(db, 'users', userId, 'interactions', interactionId);
+  await setDoc(
+    interactionDocRef,
+    {
+      location: location ? sanitizePayload(location) : null,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
 }
 
 export function subscribeToUserInteractions(

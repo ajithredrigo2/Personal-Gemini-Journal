@@ -14,6 +14,16 @@
         "summary": { "type": "string" },
         "keyInsights": { "type": "array" },
         "tags": { "type": "array" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "placeId": { "type": "string" },
+            "formattedAddress": { "type": "string" },
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" }
+          }
+        },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },

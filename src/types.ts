@@ -6,6 +6,14 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+export interface JournalLocation {
+  name: string;
+  placeId: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface InteractionEntry {
   id: string;
   userId: string;
@@ -16,6 +24,7 @@ export interface InteractionEntry {
   keyInsights?: string[];
   tags?: string[];
   mood?: string;
+  location?: JournalLocation | null;
   createdAt: string;
   updatedAt: string;
 }

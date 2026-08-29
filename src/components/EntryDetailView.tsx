@@ -15,11 +15,16 @@ import {
   FileText,
   ListTodo,
   Compass,
+  MapPin,
+  Eye,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { InteractionEntry, ChatMessage, GenerateAIResponse, ReflectionMode } from '../types';
-import { saveInteraction } from '../firebase';
+import { InteractionEntry, ChatMessage, GenerateAIResponse, ReflectionMode, JournalLocation } from '../types';
+import { saveInteraction, updateEntryLocation } from '../firebase';
+import { MapModal } from './MapModal';
 
 interface EntryDetailViewProps {
   entry: InteractionEntry;
@@ -51,6 +56,8 @@ export const EntryDetailView: React.FC<EntryDetailViewProps> = ({
   const [copied, setCopied] = useState(false);
   const [summary, setSummary] = useState(entry.summary || '');
   const [keyInsights, setKeyInsights] = useState<string[]>(entry.keyInsights || []);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [isRemovingLocation, setIsRemovingLocation] = useState(false);
 
   const ModeIcon = MODE_ICON_MAP[entry.mode] || Sparkles;
 
@@ -59,6 +66,7 @@ export const EntryDetailView: React.FC<EntryDetailViewProps> = ({
 # ${entry.title || 'Journal Reflection'}
 *Date:* ${new Date(entry.createdAt).toLocaleDateString()}
 *Mode:* ${entry.mode} | *Mood:* ${entry.mood || 'N/A'}
+${entry.location ? `*Location:* ${entry.location.name} (${entry.location.formattedAddress || 'Lat: ' + entry.location.latitude + ', Lng: ' + entry.location.longitude})` : ''}
 *Tags:* ${entry.tags?.join(', ') || 'None'}
 
 ## Executive Summary
@@ -82,6 +90,24 @@ ${messages
     navigator.clipboard.writeText(formatted);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRemoveLocation = async () => {
+    if (!entry.location || isRemovingLocation) return;
+    setIsRemovingLocation(true);
+    try {
+      await updateEntryLocation(userId, entry.id, null);
+      const updated: InteractionEntry = {
+        ...entry,
+        location: null,
+        updatedAt: new Date().toISOString(),
+      };
+      onUpdateEntry(updated);
+    } catch (err) {
+      console.error('Failed to remove location from entry:', err);
+    } finally {
+      setIsRemovingLocation(false);
+    }
   };
 
   const handleSendFollowUp = async (e: React.FormEvent) => {
@@ -226,6 +252,60 @@ ${messages
             ))}
           </div>
         )}
+
+        {/* Location Banner (if attached) */}
+        {entry.location && (
+          <div
+            id="detail-entry-location-card"
+            className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-white border border-[#D6D5CD] rounded-2xl shadow-xs"
+          >
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[#5A5A40]/15 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                <MapPin className="w-4 h-4 text-[#5A5A40]" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#3A3A35] truncate">
+                    {entry.location.name}
+                  </span>
+                  <span className="text-[10px] text-[#5A5A40] bg-[#5A5A40]/10 px-1.5 py-0.5 rounded font-medium">
+                    Google Maps
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#73726B] truncate max-w-lg">
+                  {entry.location.formattedAddress || `${entry.location.latitude.toFixed(4)}, ${entry.location.longitude.toFixed(4)}`}
+                </p>
+                <div className="text-[10px] text-[#B5B4AC] font-mono mt-0.5">
+                  Coordinates: {entry.location.latitude.toFixed(6)}, {entry.location.longitude.toFixed(6)}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <button
+                id="detail-view-on-map-btn"
+                type="button"
+                onClick={() => setIsMapModalOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-[#5A5A40] hover:bg-[#4E4E37] text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>View on Map</span>
+              </button>
+
+              <button
+                id="detail-remove-location-btn"
+                type="button"
+                onClick={handleRemoveLocation}
+                disabled={isRemovingLocation}
+                className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 text-rose-700 hover:bg-rose-50 rounded-xl border border-rose-200 transition-colors disabled:opacity-50 cursor-pointer"
+                title="Remove location from this entry"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>{isRemovingLocation ? 'Removing...' : 'Remove Location'}</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Summary Box */}
@@ -362,6 +442,13 @@ ${messages
           </div>
         </div>
       </form>
+
+      {/* Interactive Map Modal */}
+      <MapModal
+        location={entry.location || null}
+        isOpen={isMapModalOpen}
+        onClose={() => setIsMapModalOpen(false)}
+      />
     </div>
   );
 };

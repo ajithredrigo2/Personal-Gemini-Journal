@@ -23,6 +23,9 @@ import { EntryDetailView } from './components/EntryDetailView';
 import { InsightsView } from './components/InsightsView';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SecurityModal } from './components/SecurityBadge';
+import { APIProvider } from '@vis.gl/react-google-maps';
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -184,113 +187,115 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F0] text-[#3A3A35] flex flex-col font-sans">
-      <Navbar
-        user={currentUser}
-        activeView={activeView}
-        onNewEntry={() => {
-          setSelectedEntry(null);
-          setActiveView('new');
-        }}
-        onViewInsights={() => {
-          setSelectedEntry(null);
-          setActiveView('insights');
-        }}
-        onViewHistory={() => {
-          setSelectedEntry(null);
-          setActiveView('history');
-        }}
-        onLogout={handleLogout}
-        onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
-      />
+    <APIProvider apiKey={GOOGLE_MAPS_API_KEY} libraries={['places', 'marker']}>
+      <div className="min-h-screen bg-[#F5F5F0] text-[#3A3A35] flex flex-col font-sans">
+        <Navbar
+          user={currentUser}
+          activeView={activeView}
+          onNewEntry={() => {
+            setSelectedEntry(null);
+            setActiveView('new');
+          }}
+          onViewInsights={() => {
+            setSelectedEntry(null);
+            setActiveView('insights');
+          }}
+          onViewHistory={() => {
+            setSelectedEntry(null);
+            setActiveView('history');
+          }}
+          onLogout={handleLogout}
+          onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
+        />
 
-      <main className="flex-1">
-        {!currentUser ? (
-          <LandingPage
-            onSignIn={handleSignIn}
-            onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
-          />
-        ) : (
-          <>
-            {firestoreError && (
-              <div className="max-w-4xl mx-auto mt-4 px-4">
-                <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between">
-                  <span>Firestore Notice: {firestoreError}</span>
-                  <button
-                    onClick={() => setFirestoreError(null)}
-                    className="font-bold hover:text-rose-950 px-2 cursor-pointer"
-                  >
-                    &times;
-                  </button>
+        <main className="flex-1">
+          {!currentUser ? (
+            <LandingPage
+              onSignIn={handleSignIn}
+              onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
+            />
+          ) : (
+            <>
+              {firestoreError && (
+                <div className="max-w-4xl mx-auto mt-4 px-4">
+                  <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center justify-between">
+                    <span>Firestore Notice: {firestoreError}</span>
+                    <button
+                      onClick={() => setFirestoreError(null)}
+                      className="font-bold hover:text-rose-950 px-2 cursor-pointer"
+                    >
+                      &times;
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {activeView === 'new' && (
-              <JournalEditor
-                userId={currentUser.uid}
-                onEntrySaved={handleEntrySaved}
-                onViewHistory={() => setActiveView('history')}
-              />
-            )}
+              {activeView === 'new' && (
+                <JournalEditor
+                  userId={currentUser.uid}
+                  onEntrySaved={handleEntrySaved}
+                  onViewHistory={() => setActiveView('history')}
+                />
+              )}
 
-            {activeView === 'insights' && (
-              <InsightsView
-                userId={currentUser.uid}
-                entries={entries}
-                insights={insights}
-                actionItems={actionItems}
-                onNavigateToNew={() => {
-                  setSelectedEntry(null);
-                  setActiveView('new');
-                }}
-                onNavigateToEntry={handleSelectEntry}
-              />
-            )}
+              {activeView === 'insights' && (
+                <InsightsView
+                  userId={currentUser.uid}
+                  entries={entries}
+                  insights={insights}
+                  actionItems={actionItems}
+                  onNavigateToNew={() => {
+                    setSelectedEntry(null);
+                    setActiveView('new');
+                  }}
+                  onNavigateToEntry={handleSelectEntry}
+                />
+              )}
 
-            {activeView === 'history' && (
-              <EntryHistory
-                entries={entries}
-                loading={loadingEntries}
-                onSelectEntry={handleSelectEntry}
-                onDeleteEntry={handleDeletePrompt}
-                onNewEntry={() => {
-                  setSelectedEntry(null);
-                  setActiveView('new');
-                }}
-              />
-            )}
+              {activeView === 'history' && (
+                <EntryHistory
+                  entries={entries}
+                  loading={loadingEntries}
+                  onSelectEntry={handleSelectEntry}
+                  onDeleteEntry={handleDeletePrompt}
+                  onNewEntry={() => {
+                    setSelectedEntry(null);
+                    setActiveView('new');
+                  }}
+                />
+              )}
 
-            {activeView === 'detail' && selectedEntry && (
-              <EntryDetailView
-                entry={selectedEntry}
-                userId={currentUser.uid}
-                onBack={() => setActiveView('history')}
-                onDelete={handleDeletePrompt}
-                onUpdateEntry={(updated) => setSelectedEntry(updated)}
-              />
-            )}
-          </>
-        )}
-      </main>
+              {activeView === 'detail' && selectedEntry && (
+                <EntryDetailView
+                  entry={selectedEntry}
+                  userId={currentUser.uid}
+                  onBack={() => setActiveView('history')}
+                  onDelete={handleDeletePrompt}
+                  onUpdateEntry={(updated) => setSelectedEntry(updated)}
+                />
+              )}
+            </>
+          )}
+        </main>
 
-      {/* Confirmation Modal for Deletion */}
-      <ConfirmModal
-        isOpen={!!entryToDelete}
-        title="Delete Reflection Entry"
-        message="Are you sure you want to delete this reflection? This action will permanently remove the multi-turn discussion and synthesis from Cloud Firestore."
-        confirmLabel="Permanently Delete"
-        cancelLabel="Cancel"
-        onConfirm={handleConfirmDelete}
-        onCancel={() => setEntryToDelete(null)}
-      />
+        {/* Confirmation Modal for Deletion */}
+        <ConfirmModal
+          isOpen={!!entryToDelete}
+          title="Delete Reflection Entry"
+          message="Are you sure you want to delete this reflection? This action will permanently remove the multi-turn discussion and synthesis from Cloud Firestore."
+          confirmLabel="Permanently Delete"
+          cancelLabel="Cancel"
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setEntryToDelete(null)}
+        />
 
-      {/* Security and Privacy Architecture Modal */}
-      <SecurityModal
-        isOpen={isSecurityModalOpen}
-        onClose={() => setIsSecurityModalOpen(false)}
-      />
-    </div>
+        {/* Security and Privacy Architecture Modal */}
+        <SecurityModal
+          isOpen={isSecurityModalOpen}
+          onClose={() => setIsSecurityModalOpen(false)}
+        />
+      </div>
+    </APIProvider>
   );
 }
 

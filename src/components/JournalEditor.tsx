@@ -18,8 +18,9 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { InteractionEntry, ReflectionMode, ChatMessage, GenerateAIResponse } from '../types';
+import { InteractionEntry, ReflectionMode, ChatMessage, GenerateAIResponse, JournalLocation } from '../types';
 import { saveInteraction } from '../firebase';
+import { LocationPicker } from './LocationPicker';
 
 interface JournalEditorProps {
   userId: string;
@@ -101,6 +102,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
   const [keyInsights, setKeyInsights] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>(['Personal Growth']);
   const [newTagInput, setNewTagInput] = useState<string>('');
+  const [selectedLocation, setSelectedLocation] = useState<JournalLocation | null>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -207,6 +209,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
         summary: data.summary || summary,
         keyInsights: (data.keyInsights && data.keyInsights.length > 0) ? data.keyInsights : keyInsights,
         tags: combinedTags,
+        location: selectedLocation || null,
         createdAt: finalMessages[0]?.timestamp || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -232,6 +235,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
       summary,
       keyInsights,
       tags,
+      location: selectedLocation || null,
       createdAt: messages[0]?.timestamp || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -516,6 +520,13 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
             })}
           </div>
         </div>
+
+        {/* Optional Location Attachment */}
+        <LocationPicker
+          selectedLocation={selectedLocation}
+          onSelectLocation={setSelectedLocation}
+          className="pt-1"
+        />
 
         {/* Error Notification */}
         {apiError && (

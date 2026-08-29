@@ -14,8 +14,11 @@ import {
   ListTodo,
   Lightbulb,
   Compass,
+  MapPin,
+  Eye,
 } from 'lucide-react';
-import { InteractionEntry, ReflectionMode } from '../types';
+import { InteractionEntry, ReflectionMode, JournalLocation } from '../types';
+import { MapModal } from './MapModal';
 
 interface EntryHistoryProps {
   entries: InteractionEntry[];
@@ -44,6 +47,7 @@ export const EntryHistory: React.FC<EntryHistoryProps> = ({
   const [selectedModeFilter, setSelectedModeFilter] = useState<string>('all');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all');
+  const [modalLocation, setModalLocation] = useState<JournalLocation | null>(null);
 
   // Collect all unique tags
   const allTags = useMemo(() => {
@@ -67,7 +71,10 @@ export const EntryHistory: React.FC<EntryHistoryProps> = ({
       const titleMatch = entry.title?.toLowerCase().includes(query);
       const summaryMatch = entry.summary?.toLowerCase().includes(query);
       const contentMatch = entry.messages?.some((m) => m.content.toLowerCase().includes(query));
-      const matchesSearch = !searchQuery || titleMatch || summaryMatch || contentMatch;
+      const locationMatch =
+        entry.location?.name?.toLowerCase().includes(query) ||
+        entry.location?.formattedAddress?.toLowerCase().includes(query);
+      const matchesSearch = !searchQuery || titleMatch || summaryMatch || contentMatch || locationMatch;
 
       // Mode filter
       const matchesMode =
@@ -238,6 +245,16 @@ export const EntryHistory: React.FC<EntryHistoryProps> = ({
                         </span>
                       )}
 
+                      {entry.location && (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs bg-[#5A5A40]/10 text-[#5A5A40] border border-[#5A5A40]/25 px-2 py-0.5 rounded-full max-w-[200px]"
+                          title={`${entry.location.name} - ${entry.location.formattedAddress}`}
+                        >
+                          <MapPin className="w-3 h-3 shrink-0" />
+                          <span className="truncate">{entry.location.name}</span>
+                        </span>
+                      )}
+
                       <span className="inline-flex items-center gap-1 text-xs text-[#73726B] ml-auto sm:ml-0">
                         <Calendar className="w-3 h-3" />
                         {dateStr}
@@ -268,7 +285,23 @@ export const EntryHistory: React.FC<EntryHistoryProps> = ({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+                  <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+                    {entry.location && (
+                      <button
+                        id={`history-view-map-btn-${entry.id}`}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setModalLocation(entry.location || null);
+                        }}
+                        title={`View on Map: ${entry.location.name}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-[#5A5A40] bg-[#EFEEE7] hover:bg-[#E8E6DF] rounded-lg border border-[#D6D5CD] transition-colors cursor-pointer"
+                      >
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span className="hidden md:inline">Map</span>
+                      </button>
+                    )}
+
                     <span className="inline-flex items-center gap-1 text-xs text-[#73726B] bg-[#F5F5F0] px-2.5 py-1 rounded-lg border border-[#D6D5CD]">
                       <MessageSquare className="w-3.5 h-3.5" />
                       {entry.messages?.length || 0} turns
@@ -297,6 +330,13 @@ export const EntryHistory: React.FC<EntryHistoryProps> = ({
           </div>
         )}
       </div>
+
+      {/* Interactive Map Modal */}
+      <MapModal
+        location={modalLocation}
+        isOpen={!!modalLocation}
+        onClose={() => setModalLocation(null)}
+      />
     </div>
   );
 };

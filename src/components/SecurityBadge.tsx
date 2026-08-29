@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, KeyRound, Cpu, Database, CheckCircle2, X } from 'lucide-react';
+import { ShieldCheck, Lock, KeyRound, Cpu, Database, CheckCircle2, X, MapPin } from 'lucide-react';
 
 interface SecurityModalProps {
   isOpen: boolean;
@@ -77,6 +77,16 @@ service cloud.firestore {
               </div>
               <p className="text-[#B5B4AC] leading-relaxed text-[11px] font-sans">
                 Gemini API keys are never exposed to browser runtimes. All interactions are securely brokered via server-side API proxy routes.
+              </p>
+            </div>
+
+            <div className="bg-[#2D2D29] p-3.5 rounded-xl border border-[#5A5A40]/20 sm:col-span-2">
+              <div className="flex items-center gap-2 text-[#E8E6DF] font-semibold mb-1">
+                <MapPin className="w-3.5 h-3.5 text-[#5A5A40]" />
+                <span>Location Privacy & Zero Auto-Tracking</span>
+              </div>
+              <p className="text-[#B5B4AC] leading-relaxed text-[11px] font-sans">
+                No automatic GPS tracking. Users explicitly search and attach real places via Google Maps Places API. Location metadata (name, place ID, address, coordinates) is stored exclusively under the user's isolated Firestore document and can be removed at any time.
               </p>
             </div>
 
