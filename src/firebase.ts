@@ -11,6 +11,7 @@ import {
   getFirestore,
   collection,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -19,7 +20,16 @@ import {
   getDocs,
   Unsubscribe,
 } from 'firebase/firestore';
-import { InteractionEntry, InsightEntry, ActionItemEntry, JournalLocation } from './types';
+import {
+  InteractionEntry,
+  InsightEntry,
+  ActionItemEntry,
+  JournalLocation,
+  UserRole,
+  UserRoleDocument,
+  WebhookConfig,
+  AuditLogEntry,
+} from './types';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase App singleton
@@ -267,4 +277,175 @@ export function subscribeToUserActionItems(
     }
   );
 }
+
+// ---------------------------------------------------------------------------
+// Role-Based Access Control (RBAC) `/roles/{userId}`
+// ---------------------------------------------------------------------------
+
+export async function getUserRole(userId: string): Promise<UserRole> {
+  if (!userId) return 'member';
+  try {
+    const roleDocRef = doc(db, 'roles', userId);
+    const snap = await getDoc(roleDocRef);
+    if (snap.exists()) {
+      const data = snap.data() as UserRoleDocument;
+      return data.role || 'member';
+    }
+  } catch (err) {
+    console.warn('Failed to fetch user role from Firestore:', err);
+  }
+  return 'member';
+}
+
+export async function setUserRole(
+  userId: string,
+  role: UserRole,
+  details?: { email?: string; displayName?: string; grantedBy?: string }
+): Promise<void> {
+  if (!userId) throw new Error('User ID is required');
+  const roleDocRef = doc(db, 'roles', userId);
+  const payload: UserRoleDocument = {
+    userId,
+    role,
+    email: details?.email || '',
+    displayName: details?.displayName || '',
+    grantedAt: new Date().toISOString(),
+    grantedBy: details?.grantedBy || 'system',
+  };
+  await setDoc(roleDocRef, sanitizePayload(payload), { merge: true });
+}
+
+export function subscribeToUserRole(
+  userId: string,
+  onUpdate: (role: UserRole) => void
+): Unsubscribe {
+  if (!userId) {
+    onUpdate('member');
+    return () => {};
+  }
+  const roleDocRef = doc(db, 'roles', userId);
+  return onSnapshot(
+    roleDocRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as UserRoleDocument;
+        onUpdate(data.role || 'member');
+      } else {
+        onUpdate('member');
+      }
+    },
+    (err) => {
+      console.warn('Role subscription fallback to member:', err);
+      onUpdate('member');
+    }
+  );
+}
+
+export function subscribeToAllUserRoles(
+  onUpdate: (roles: UserRoleDocument[]) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  const rolesCol = collection(db, 'roles');
+  return onSnapshot(
+    rolesCol,
+    (snap) => {
+      const list: UserRoleDocument[] = [];
+      snap.forEach((d) => {
+        list.push(d.data() as UserRoleDocument);
+      });
+      onUpdate(list);
+    },
+    (err) => {
+      console.error('All roles subscription error:', err);
+      onError(err);
+    }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// External Webhook Configurations `/users/{userId}/webhooks/{webhookId}`
+// ---------------------------------------------------------------------------
+
+export async function saveWebhookConfig(userId: string, config: WebhookConfig): Promise<void> {
+  if (!userId || !config.id) throw new Error('User ID and Webhook ID are required');
+  const webhookDocRef = doc(db, 'users', userId, 'webhooks', config.id);
+  await setDoc(webhookDocRef, sanitizePayload(config), { merge: true });
+}
+
+export async function deleteWebhookConfig(userId: string, webhookId: string): Promise<void> {
+  if (!userId || !webhookId) throw new Error('User ID and Webhook ID are required');
+  const webhookDocRef = doc(db, 'users', userId, 'webhooks', webhookId);
+  await deleteDoc(webhookDocRef);
+}
+
+export function subscribeToUserWebhooks(
+  userId: string,
+  onUpdate: (webhooks: WebhookConfig[]) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  if (!userId) {
+    onUpdate([]);
+    return () => {};
+  }
+  const webhooksCol = collection(db, 'users', userId, 'webhooks');
+  const q = query(webhooksCol, orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list: WebhookConfig[] = [];
+      snap.forEach((d) => {
+        list.push({ ...d.data(), id: d.id } as WebhookConfig);
+      });
+      onUpdate(list);
+    },
+    (err) => {
+      console.error('Webhooks subscription error:', err);
+      onError(err);
+    }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Security & System Audit Logging `/audit_logs/{logId}`
+// ---------------------------------------------------------------------------
+
+export async function logAuditEvent(
+  event: Omit<AuditLogEntry, 'id' | 'timestamp'>
+): Promise<void> {
+  try {
+    const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const logDocRef = doc(db, 'audit_logs', logId);
+    const payload: AuditLogEntry = {
+      ...event,
+      id: logId,
+      timestamp: new Date().toISOString(),
+    };
+    await setDoc(logDocRef, sanitizePayload(payload));
+  } catch (err) {
+    console.warn('Could not write audit log to firestore:', err);
+  }
+}
+
+export function subscribeToAuditLogs(
+  onUpdate: (logs: AuditLogEntry[]) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  const auditCol = collection(db, 'audit_logs');
+  const q = query(auditCol, orderBy('timestamp', 'desc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const logs: AuditLogEntry[] = [];
+      snap.forEach((d) => {
+        logs.push({ ...d.data(), id: d.id } as AuditLogEntry);
+      });
+      onUpdate(logs);
+    },
+    (err) => {
+      console.warn('Audit logs subscription error (may require admin permissions):', err);
+      onError(err);
+    }
+  );
+}
+
 

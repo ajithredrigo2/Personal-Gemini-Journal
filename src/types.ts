@@ -24,6 +24,7 @@ export interface InteractionEntry {
   keyInsights?: string[];
   tags?: string[];
   mood?: string;
+  extractedActions?: string[];
   location?: JournalLocation | null;
   createdAt: string;
   updatedAt: string;
@@ -69,6 +70,64 @@ export interface UserProfile {
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
+}
+
+export type UserRole = 'member' | 'admin' | 'superadmin';
+
+export interface UserRoleDocument {
+  userId: string;
+  role: UserRole;
+  email?: string;
+  displayName?: string;
+  grantedAt: string;
+  grantedBy?: string;
+}
+
+export type WebhookProvider = 'slack' | 'discord' | 'custom';
+export type WebhookTrigger = 'all' | 'action_items_only' | 'action_plan_only' | 'deep_inquiry_only';
+
+export interface WebhookConfig {
+  id: string;
+  userId: string;
+  name: string;
+  provider: WebhookProvider;
+  url: string;
+  enabled: boolean;
+  trigger: WebhookTrigger;
+  lastDispatchedAt?: string;
+  lastStatus?: 'success' | 'failed';
+  createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  eventType:
+    | 'auth_login'
+    | 'reflection_saved'
+    | 'webhook_dispatched'
+    | 'role_changed'
+    | 'permission_denied'
+    | 'permission_checked'
+    | 'insight_generated'
+    | 'location_attached';
+  severity: 'info' | 'warn' | 'security';
+  actorId: string;
+  actorEmail?: string;
+  details: string;
+  metadata?: Record<string, any>;
+}
+
+export interface PlatformMetrics {
+  totalReflections: number;
+  totalUsers: number;
+  totalActionItems: number;
+  activeWebhooks: number;
+  modeDistribution: Record<ReflectionMode, number>;
+  moodDistribution: Record<string, number>;
+  averageTurnsPerSession: number;
+  aiSuccessRatePercent: number;
+  lastCalculatedAt: string;
 }
 
 export interface GenerateAIRequest {

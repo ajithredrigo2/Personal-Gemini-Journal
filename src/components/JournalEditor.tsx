@@ -15,15 +15,18 @@ import {
   MessageSquare,
   Bot,
   User as UserIcon,
+  BellRing,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { InteractionEntry, ReflectionMode, ChatMessage, GenerateAIResponse, JournalLocation } from '../types';
-import { saveInteraction } from '../firebase';
+import { InteractionEntry, ReflectionMode, ChatMessage, GenerateAIResponse, JournalLocation, WebhookConfig } from '../types';
+import { saveInteraction, logAuditEvent } from '../firebase';
 import { LocationPicker } from './LocationPicker';
 
 interface JournalEditorProps {
   userId: string;
+  userEmail?: string | null;
+  webhooks?: WebhookConfig[];
   onEntrySaved: (entry: InteractionEntry) => void;
   onViewHistory: () => void;
 }
@@ -89,6 +92,8 @@ const SUGGESTED_STANDARD_TAGS = [
 
 export const JournalEditor: React.FC<JournalEditorProps> = ({
   userId,
+  userEmail,
+  webhooks = [],
   onEntrySaved,
   onViewHistory,
 }) => {
@@ -108,6 +113,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
   const [apiError, setApiError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSavedEntry, setLastSavedEntry] = useState<InteractionEntry | null>(null);
+  const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
 
   const handleAddTag = (tagToAdd?: string) => {
     const target = (tagToAdd || newTagInput).trim();
@@ -136,6 +142,51 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
       setSaveStatus('saved');
       setLastSavedEntry(entryToSave);
       onEntrySaved(entryToSave);
+
+      // Webhook Dispatch Integration: Trigger enabled webhooks
+      const activeWebhooks = webhooks.filter((wh) => {
+        if (!wh.enabled) return false;
+        if (wh.trigger === 'all') return true;
+        if (wh.trigger === 'action_items_only') return entryToSave.extractedActions && entryToSave.extractedActions.length > 0;
+        if (wh.trigger === 'action_plan_only') return entryToSave.mode === 'action_plan';
+        if (wh.trigger === 'deep_inquiry_only') return entryToSave.mode === 'deep_inquiry';
+        return true;
+      });
+
+      if (activeWebhooks.length > 0) {
+        for (const wh of activeWebhooks) {
+          try {
+            await fetch('/api/notifications/dispatch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                webhookUrl: wh.url,
+                provider: wh.provider,
+                reflection: {
+                  title: entryToSave.title,
+                  summary: entryToSave.summary,
+                  mode: entryToSave.mode,
+                  mood: entryToSave.mood,
+                  actionItems: entryToSave.extractedActions || [],
+                  location: entryToSave.location,
+                },
+              }),
+            });
+
+            await logAuditEvent({
+              eventType: 'webhook_dispatched',
+              severity: 'info',
+              actorId: userId,
+              actorEmail: userEmail || 'user@local',
+              details: `Dispatched reflection notification to ${wh.provider.toUpperCase()} ("${wh.name}")`,
+            });
+          } catch (whErr) {
+            console.warn('Webhook dispatch failed for', wh.name, whErr);
+          }
+        }
+        setWebhookStatus(`Dispatched to ${activeWebhooks.length} external channel(s)`);
+        setTimeout(() => setWebhookStatus(null), 4000);
+      }
     } catch (err: unknown) {
       console.error('Firestore save failed:', err);
       setSaveStatus('error');

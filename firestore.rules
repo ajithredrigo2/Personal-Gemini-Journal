@@ -2,9 +2,32 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // User-isolated collections: interaction sessions, reflection insights, and action items
+    // Helper function to check if the caller is an administrator
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == 'ajith.redrigo@yahoo.com' ||
+        get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['admin', 'superadmin']
+      );
+    }
+
+    // User-isolated collections: interactions, insights, actionItems, webhooks, settings
     match /users/{userId}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Role-based Access Control (RBAC) collection
+    match /roles/{userId} {
+      // Any authenticated user can read their own role; Admins can read all user roles
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      // Users can bootstrap their own default role on sign up; Admins can update roles
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update, delete: if isAdmin() || (request.auth != null && request.auth.uid == userId);
+    }
+
+    // Security & System Audit Logs
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if request.auth != null;
     }
   }
 }

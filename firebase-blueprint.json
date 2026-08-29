@@ -64,6 +64,54 @@
         "completedAt": { "type": "string" }
       },
       "required": ["id", "userId", "title", "status", "createdAt"]
+    },
+    "role": {
+      "title": "User Role & Permissions",
+      "description": "Role-based access control role assignment (member, admin, superadmin)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["member", "admin", "superadmin"] },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "grantedAt": { "type": "string" },
+        "grantedBy": { "type": "string" }
+      },
+      "required": ["userId", "role", "grantedAt"]
+    },
+    "webhookConfig": {
+      "title": "External Webhook Notification Endpoint",
+      "description": "User-configured external notification targets (Slack, Discord, Custom)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "provider": { "type": "string", "enum": ["slack", "discord", "custom"] },
+        "url": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "trigger": { "type": "string", "enum": ["all", "action_items_only", "action_plan_only", "deep_inquiry_only"] },
+        "lastDispatchedAt": { "type": "string" },
+        "lastStatus": { "type": "string", "enum": ["success", "failed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "name", "provider", "url", "enabled", "trigger", "createdAt"]
+    },
+    "auditLog": {
+      "title": "Security & System Audit Log",
+      "description": "Audit trail of security events, auth verifications, and elevated operations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "eventType": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "warn", "security"] },
+        "actorId": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "details": { "type": "string" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["id", "timestamp", "eventType", "severity", "actorId", "details"]
     }
   },
   "firestore": {
@@ -78,6 +126,18 @@
     "/users/{userId}/actionItems/{actionItemId}": {
       "schema": "actionItem",
       "description": "User-isolated actionable tasks extracted from journal sessions"
+    },
+    "/users/{userId}/webhooks/{webhookId}": {
+      "schema": "webhookConfig",
+      "description": "User-isolated external notification endpoints"
+    },
+    "/roles/{userId}": {
+      "schema": "role",
+      "description": "Role assignments and RBAC security credentials"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "auditLog",
+      "description": "Platform-wide security audit and compliance events"
     }
   }
 }

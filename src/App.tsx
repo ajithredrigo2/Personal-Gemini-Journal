@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { UserProfile, InteractionEntry, InsightEntry, ActionItemEntry } from './types';
+import { UserProfile, InteractionEntry, InsightEntry, ActionItemEntry, UserRole, WebhookConfig } from './types';
 import {
   loginWithGoogle,
   logoutUser,
@@ -14,6 +14,9 @@ import {
   subscribeToUserInsights,
   subscribeToUserActionItems,
   deleteInteraction,
+  subscribeToUserRole,
+  subscribeToUserWebhooks,
+  logAuditEvent,
 } from './firebase';
 import { Navbar } from './components/Navbar';
 import { LandingPage } from './components/LandingPage';
@@ -21,6 +24,8 @@ import { JournalEditor } from './components/JournalEditor';
 import { EntryHistory } from './components/EntryHistory';
 import { EntryDetailView } from './components/EntryDetailView';
 import { InsightsView } from './components/InsightsView';
+import { AdminDashboard } from './components/AdminDashboard';
+import { WebhookSettingsModal } from './components/WebhookSettingsModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SecurityModal } from './components/SecurityBadge';
 import { APIProvider } from '@vis.gl/react-google-maps';
@@ -29,8 +34,10 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [userRole, setUserRoleState] = useState<UserRole>('member');
+  const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
   const [authInitialized, setAuthInitialized] = useState(false);
-  const [activeView, setActiveView] = useState<'new' | 'insights' | 'history' | 'detail'>('new');
+  const [activeView, setActiveView] = useState<'new' | 'insights' | 'history' | 'detail' | 'admin'>('new');
   const [selectedEntry, setSelectedEntry] = useState<InteractionEntry | null>(null);
 
   // Firestore entries, insights, and action items state
@@ -43,6 +50,7 @@ export default function App() {
   // Modals state
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
 
   // Subscribe to Firebase Auth State
   useEffect(() => {
@@ -54,8 +62,23 @@ export default function App() {
           displayName: firebaseUser.displayName,
           photoURL: firebaseUser.photoURL,
         });
+
+        // Superadmin bypass for creator email or default to admin
+        if (firebaseUser.email === 'ajith.redrigo@yahoo.com') {
+          setUserRoleState('superadmin');
+        }
+
+        logAuditEvent({
+          eventType: 'auth_login',
+          severity: 'info',
+          actorId: firebaseUser.uid,
+          actorEmail: firebaseUser.email || 'user@local',
+          details: `User signed in successfully: ${firebaseUser.displayName || firebaseUser.email}`,
+        });
       } else {
         setCurrentUser(null);
+        setUserRoleState('member');
+        setWebhooks([]);
         setEntries([]);
         setInsights([]);
         setActionItems([]);
@@ -66,12 +89,13 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // Subscribe to user-isolated Firestore entries, insights, and action items
+  // Subscribe to user-isolated Firestore entries, insights, action items, role, and webhooks
   useEffect(() => {
     if (!currentUser) {
       setEntries([]);
       setInsights([]);
       setActionItems([]);
+      setWebhooks([]);
       setLoadingEntries(false);
       return;
     }
@@ -118,10 +142,35 @@ export default function App() {
       }
     );
 
+    const unsubscribeRole = subscribeToUserRole(
+      currentUser.uid,
+      (fetchedRole) => {
+        if (currentUser.email === 'ajith.redrigo@yahoo.com') {
+          setUserRoleState('superadmin');
+        } else if (fetchedRole) {
+          setUserRoleState(fetchedRole);
+        } else {
+          setUserRoleState('admin');
+        }
+      }
+    );
+
+    const unsubscribeWebhooks = subscribeToUserWebhooks(
+      currentUser.uid,
+      (fetchedWebhooks) => {
+        setWebhooks(fetchedWebhooks);
+      },
+      (err) => {
+        console.warn('Could not load webhooks:', err);
+      }
+    );
+
     return () => {
       unsubscribeInteractions();
       unsubscribeInsights();
       unsubscribeActionItems();
+      unsubscribeRole();
+      unsubscribeWebhooks();
     };
   }, [currentUser?.uid]);
 
@@ -137,6 +186,15 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
+      if (currentUser) {
+        await logAuditEvent({
+          eventType: 'auth_login',
+          severity: 'info',
+          actorId: currentUser.uid,
+          actorEmail: currentUser.email || 'user@local',
+          details: 'User logged out',
+        });
+      }
       await logoutUser();
       setCurrentUser(null);
       setSelectedEntry(null);
@@ -159,6 +217,13 @@ export default function App() {
     if (!entryToDelete || !currentUser) return;
     try {
       await deleteInteraction(currentUser.uid, entryToDelete);
+      await logAuditEvent({
+        eventType: 'permission_checked',
+        severity: 'info',
+        actorId: currentUser.uid,
+        actorEmail: currentUser.email || 'user@local',
+        details: `Deleted reflection entry ${entryToDelete}`,
+      });
       if (selectedEntry?.id === entryToDelete) {
         setSelectedEntry(null);
         setActiveView('history');
@@ -191,6 +256,7 @@ export default function App() {
       <div className="min-h-screen bg-[#F5F5F0] text-[#3A3A35] flex flex-col font-sans">
         <Navbar
           user={currentUser}
+          userRole={userRole}
           activeView={activeView}
           onNewEntry={() => {
             setSelectedEntry(null);
@@ -204,8 +270,13 @@ export default function App() {
             setSelectedEntry(null);
             setActiveView('history');
           }}
+          onViewAdmin={() => {
+            setSelectedEntry(null);
+            setActiveView('admin');
+          }}
+          onOpenWebhooks={() => setIsWebhooksModalOpen(true)}
           onLogout={handleLogout}
-          onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
+          onOpenSecurityModal={() => setIsSecurityModalOpen(false)}
         />
 
         <main className="flex-1">
@@ -233,6 +304,8 @@ export default function App() {
               {activeView === 'new' && (
                 <JournalEditor
                   userId={currentUser.uid}
+                  userEmail={currentUser.email}
+                  webhooks={webhooks}
                   onEntrySaved={handleEntrySaved}
                   onViewHistory={() => setActiveView('history')}
                 />
@@ -274,6 +347,16 @@ export default function App() {
                   onUpdateEntry={(updated) => setSelectedEntry(updated)}
                 />
               )}
+
+              {activeView === 'admin' && (
+                <AdminDashboard
+                  currentUser={currentUser}
+                  currentRole={userRole}
+                  onRoleChange={(newRole) => setUserRoleState(newRole)}
+                  localEntries={entries}
+                  onClose={() => setActiveView('new')}
+                />
+              )}
             </>
           )}
         </main>
@@ -289,6 +372,17 @@ export default function App() {
           onCancel={() => setEntryToDelete(null)}
         />
 
+        {/* External Notifications / Webhook Settings Modal */}
+        {currentUser && (
+          <WebhookSettingsModal
+            isOpen={isWebhooksModalOpen}
+            onClose={() => setIsWebhooksModalOpen(false)}
+            userId={currentUser.uid}
+            userEmail={currentUser.email}
+            webhooks={webhooks}
+          />
+        )}
+
         {/* Security and Privacy Architecture Modal */}
         <SecurityModal
           isOpen={isSecurityModalOpen}
@@ -298,4 +392,5 @@ export default function App() {
     </APIProvider>
   );
 }
+
 
