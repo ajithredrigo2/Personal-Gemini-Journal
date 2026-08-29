@@ -1,12 +1,12 @@
 {
-  "projectId": "crucial-chalice-388018",
-  "appId": "1:389639378124:web:211e7fc9698623e4119e69",
-  "apiKey": "AIzaSyBK10d1seLW7YI38SkYLF9gs173OFEGRpM",
-  "authDomain": "crucial-chalice-388018.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-1b2fe189-e8b1-49b6-ae0b-712ae2669fc7",
-  "storageBucket": "crucial-chalice-388018.firebasestorage.app",
-  "messagingSenderId": "389639378124",
-  "measurementId": "",
-  "oAuthClientId": "389639378124-a0ftgionltb4bkrtmlnvdnstc0e4oodr.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "firestoreDatabaseId": "(default)",
+  "oAuthClientId": "238339028731-12vqsa9b6a6bf9v3kq5kv2n8det7i0fv.apps.googleusercontent.com",
+  "recaptchaSiteKey": "",
+  "apiKey": "AIzaSyAs5e1iop-JJQEkMZNGre73lloxomfBbkU",
+  "authDomain": "gen-lang-client-0496437277.firebaseapp.com",
+  "projectId": "gen-lang-client-0496437277",
+  "storageBucket": "gen-lang-client-0496437277.firebasestorage.app",
+  "messagingSenderId": "238339028731",
+  "appId": "1:238339028731:web:daabb3dac858b64203225e",
+  "measurementId": "G-N3GSEPLGY0"
 }

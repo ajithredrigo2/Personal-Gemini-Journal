@@ -38,12 +38,12 @@ export function extractAndVerifyUid(authHeader: string | undefined): { uid: stri
 
     // Validate project binding if project ID is available
     if (FIREBASE_PROJECT_ID) {
-      if (payload.aud !== FIREBASE_PROJECT_ID && payload.aud !== 'crucial-chalice-388018') {
+      if (payload.aud !== FIREBASE_PROJECT_ID && payload.aud !== 'gen-lang-client-0496437277') {
         console.warn(`[Auth] Audience mismatch. Expected ${FIREBASE_PROJECT_ID}, got ${payload.aud}`);
       }
       if (
         payload.iss !== `https://securetoken.google.com/${FIREBASE_PROJECT_ID}` &&
-        payload.iss !== `https://securetoken.google.com/crucial-chalice-388018`
+        payload.iss !== `https://securetoken.google.com/gen-lang-client-0496437277`
       ) {
         console.warn(`[Auth] Issuer mismatch: ${payload.iss}`);
       }
