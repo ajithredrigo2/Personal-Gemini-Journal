@@ -276,7 +276,7 @@ export default function App() {
           }}
           onOpenWebhooks={() => setIsWebhooksModalOpen(true)}
           onLogout={handleLogout}
-          onOpenSecurityModal={() => setIsSecurityModalOpen(false)}
+          onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
         />
 
         <main className="flex-1">
