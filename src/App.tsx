@@ -52,6 +52,13 @@ export default function App() {
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
+  const [editorSessionKey, setEditorSessionKey] = useState<number>(() => Date.now());
+
+  const handleStartNewReflection = () => {
+    setSelectedEntry(null);
+    setEditorSessionKey(Date.now());
+    setActiveView('new');
+  };
 
   // Subscribe to Firebase Auth State
   useEffect(() => {
@@ -263,10 +270,7 @@ export default function App() {
           user={currentUser}
           userRole={userRole}
           activeView={activeView}
-          onNewEntry={() => {
-            setSelectedEntry(null);
-            setActiveView('new');
-          }}
+          onNewEntry={handleStartNewReflection}
           onViewInsights={() => {
             setSelectedEntry(null);
             setActiveView('insights');
@@ -308,11 +312,13 @@ export default function App() {
 
               {activeView === 'new' && (
                 <JournalEditor
+                  key={editorSessionKey}
                   userId={currentUser.uid}
                   userEmail={currentUser.email}
                   webhooks={webhooks}
                   onEntrySaved={handleEntrySaved}
                   onViewHistory={() => setActiveView('history')}
+                  onStartNewReflection={handleStartNewReflection}
                 />
               )}
 
@@ -322,10 +328,7 @@ export default function App() {
                   entries={entries}
                   insights={insights}
                   actionItems={actionItems}
-                  onNavigateToNew={() => {
-                    setSelectedEntry(null);
-                    setActiveView('new');
-                  }}
+                  onNavigateToNew={handleStartNewReflection}
                   onNavigateToEntry={handleSelectEntry}
                 />
               )}
@@ -336,10 +339,7 @@ export default function App() {
                   loading={loadingEntries}
                   onSelectEntry={handleSelectEntry}
                   onDeleteEntry={handleDeletePrompt}
-                  onNewEntry={() => {
-                    setSelectedEntry(null);
-                    setActiveView('new');
-                  }}
+                  onNewEntry={handleStartNewReflection}
                 />
               )}
 
@@ -359,7 +359,7 @@ export default function App() {
                   currentRole={userRole}
                   onRoleChange={(newRole) => setUserRoleState(newRole)}
                   localEntries={entries}
-                  onClose={() => setActiveView('new')}
+                  onClose={handleStartNewReflection}
                 />
               )}
             </>

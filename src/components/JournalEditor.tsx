@@ -16,6 +16,7 @@ import {
   Bot,
   User as UserIcon,
   BellRing,
+  Plus,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,6 +30,7 @@ interface JournalEditorProps {
   webhooks?: WebhookConfig[];
   onEntrySaved: (entry: InteractionEntry) => void;
   onViewHistory: () => void;
+  onStartNewReflection?: () => void;
 }
 
 const MODES: Array<{
@@ -96,8 +98,9 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
   webhooks = [],
   onEntrySaved,
   onViewHistory,
+  onStartNewReflection,
 }) => {
-  const [entryId] = useState<string>(() => `entry_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+  const [entryId, setEntryId] = useState<string>(() => `entry_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
   const [title, setTitle] = useState<string>('');
   const [mode, setMode] = useState<ReflectionMode>('reflection');
   const [selectedMood, setSelectedMood] = useState<string>('Calm');
@@ -114,6 +117,28 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSavedEntry, setLastSavedEntry] = useState<InteractionEntry | null>(null);
   const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
+
+  const handleStartFresh = () => {
+    if (onStartNewReflection) {
+      onStartNewReflection();
+    } else {
+      setEntryId(`entry_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+      setTitle('');
+      setMode('reflection');
+      setSelectedMood('Calm');
+      setCurrentInput('');
+      setMessages([]);
+      setSummary('');
+      setKeyInsights([]);
+      setTags(['Personal Growth']);
+      setNewTagInput('');
+      setSelectedLocation(null);
+      setApiError(null);
+      setSaveStatus('idle');
+      setLastSavedEntry(null);
+      setWebhookStatus(null);
+    }
+  };
 
   const handleAddTag = (tagToAdd?: string) => {
     const target = (tagToAdd || newTagInput).trim();
@@ -327,6 +352,18 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
             >
               <AlertCircle className="w-3.5 h-3.5" />
               Retry Save
+            </button>
+          )}
+
+          {messages.length > 0 && (
+            <button
+              id="start-fresh-reflection-btn"
+              onClick={handleStartFresh}
+              className="inline-flex items-center gap-1.5 text-xs text-[#5A5A40] hover:text-[#3A3A35] bg-[#5A5A40]/10 hover:bg-[#5A5A40]/20 px-3 py-1.5 rounded-lg border border-[#5A5A40]/30 font-medium transition-colors cursor-pointer"
+              title="Clear current conversation and start a new blank reflection"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Blank Reflection</span>
             </button>
           )}
 
