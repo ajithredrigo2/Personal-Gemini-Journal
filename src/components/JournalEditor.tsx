@@ -22,7 +22,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { InteractionEntry, ReflectionMode, ChatMessage, GenerateAIResponse, JournalLocation, WebhookConfig } from '../types';
-import { saveInteraction, logAuditEvent } from '../firebase';
+import { saveInteraction, logAuditEvent, authedFetch } from '../firebase';
 import { LocationPicker } from './LocationPicker';
 
 interface JournalEditorProps {
@@ -180,11 +180,12 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
       });
 
       if (activeWebhooks.length > 0) {
+        let dispatched = 0;
+        let failed = 0;
         for (const wh of activeWebhooks) {
           try {
-            await fetch('/api/notifications/dispatch', {
+            const whRes = await authedFetch('/api/notifications/dispatch', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 webhookUrl: wh.url,
                 provider: wh.provider,
@@ -199,6 +200,12 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               }),
             });
 
+            if (!whRes.ok) {
+              const detail = await whRes.json().catch(() => ({}));
+              throw new Error(detail.error || `Webhook returned HTTP ${whRes.status}`);
+            }
+
+            dispatched += 1;
             await logAuditEvent({
               eventType: 'webhook_dispatched',
               severity: 'info',
@@ -207,11 +214,16 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               details: `Dispatched reflection notification to ${wh.provider.toUpperCase()} ("${wh.name}")`,
             });
           } catch (whErr) {
-            console.warn('Webhook dispatch failed for', wh.name, whErr);
+            failed += 1;
+            console.error('Webhook dispatch failed for', wh.name, whErr);
           }
         }
-        setWebhookStatus(`Dispatched to ${activeWebhooks.length} external channel(s)`);
-        setTimeout(() => setWebhookStatus(null), 4000);
+        setWebhookStatus(
+          failed > 0
+            ? `Dispatched to ${dispatched} channel(s); ${failed} failed`
+            : `Dispatched to ${dispatched} external channel(s)`
+        );
+        setTimeout(() => setWebhookStatus(null), 5000);
       }
     } catch (err: unknown) {
       console.warn('Firestore save notice:', err);
@@ -243,9 +255,8 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
     }
 
     try {
-      const res = await fetch('/api/gemini/reflect', {
+      const res = await authedFetch('/api/gemini/reflect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode,
           messages: updatedMessages,

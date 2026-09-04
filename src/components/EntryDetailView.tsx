@@ -23,7 +23,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { InteractionEntry, ChatMessage, GenerateAIResponse, ReflectionMode, JournalLocation } from '../types';
-import { saveInteraction, updateEntryLocation } from '../firebase';
+import { saveInteraction, updateEntryLocation, authedFetch } from '../firebase';
 import { MapModal } from './MapModal';
 
 interface EntryDetailViewProps {
@@ -128,9 +128,8 @@ ${messages
     setApiError(null);
 
     try {
-      const res = await fetch('/api/gemini/reflect', {
+      const res = await authedFetch('/api/gemini/reflect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: entry.mode,
           messages: updatedMessages,

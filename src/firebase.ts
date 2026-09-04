@@ -30,15 +30,40 @@ import {
   WebhookConfig,
   AuditLogEntry,
 } from './types';
-import firebaseConfig from '../firebase-applet-config.json';
+// ---------------------------------------------------------------------------
+// Firebase client configuration
+//
+// Read from Vite build-time env vars (VITE_FIREBASE_*) so no secret-bearing
+// JSON file needs to be committed or COPY'd into the Docker image. See
+// .env.example for the full list.
+// ---------------------------------------------------------------------------
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+};
+
+const FIRESTORE_DATABASE_ID = import.meta.env.VITE_FIRESTORE_DATABASE_ID || '';
+
+export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+
+if (!isFirebaseConfigured) {
+  console.error(
+    '[Firebase] Client configuration is missing. Set VITE_FIREBASE_API_KEY, ' +
+      'VITE_FIREBASE_AUTH_DOMAIN and VITE_FIREBASE_PROJECT_ID at build time.'
+  );
+}
 
 // Initialize Firebase App singleton
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 
-// Use specified database ID from config if present
-export const db = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+export const db = FIRESTORE_DATABASE_ID
+  ? getFirestore(app, FIRESTORE_DATABASE_ID)
   : getFirestore(app);
 
 const googleProvider = new GoogleAuthProvider();
@@ -95,41 +120,78 @@ export function sanitizePayload<T>(data: T): T {
 export class UnauthorizedDomainError extends Error {
   domain: string;
   constructor(domain: string) {
-    super(`Domain '${domain}' is not authorized in Firebase Console.`);
+    super(
+      `This app's domain (${domain}) is not in the Firebase Console's authorized ` +
+        `domains list. Add it under Authentication -> Settings -> Authorized domains.`
+    );
     this.name = 'UnauthorizedDomainError';
     this.domain = domain;
   }
 }
 
-// Authentication Helpers
+/**
+ * Signs the user in with Google.
+ *
+ * This NEVER falls back to demo/evaluator mode. A failure here is surfaced to
+ * the caller so the real cause (unauthorized domain, blocked popup, cancelled
+ * sign-in) can be shown to the user. Demo mode is an explicit, separate action.
+ */
 export async function loginWithGoogle(): Promise<User> {
+  if (!isFirebaseConfigured) {
+    throw new Error(
+      'Firebase is not configured in this build. Set the VITE_FIREBASE_* environment variables and rebuild.'
+    );
+  }
+
+  // A stale demo session must never shadow a real sign-in.
+  clearDemoSession();
+
   try {
     const result = await signInWithPopup(auth, googleProvider);
-    demoAuthUser = null;
-    try {
-      localStorage.removeItem('mindscribe_demo_user');
-    } catch {}
     return result.user;
   } catch (err: any) {
-    if (
-      err?.code === 'auth/unauthorized-domain' ||
-      err?.message?.includes('auth/unauthorized-domain') ||
-      err?.name === 'UnauthorizedDomainError'
-    ) {
-      console.warn(
-        'Firebase auth unauthorized domain for current container. Activating sandbox authenticated mode for user ajith.redrigo@gmail.com'
+    const code = err?.code || '';
+
+    if (code === 'auth/unauthorized-domain') {
+      throw new UnauthorizedDomainError(
+        typeof window !== 'undefined' ? window.location.hostname : 'unknown'
       );
-      const fallbackUser = loginDemoUser('ajith.redrigo@gmail.com', 'Ajith Rodrigo');
-      return fallbackUser;
     }
-    console.warn('Sign-in encounter:', err?.message || err);
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      throw new Error('Sign-in was cancelled before it completed.');
+    }
+    if (code === 'auth/popup-blocked') {
+      throw new Error('Your browser blocked the sign-in popup. Allow popups for this site and try again.');
+    }
+    if (code === 'auth/network-request-failed') {
+      throw new Error('Network error during sign-in. Check your connection and try again.');
+    }
+
+    console.error('[Auth] Google sign-in failed:', code || err?.message || err);
     throw err;
   }
 }
 
+/** Clears any persisted demo session. */
+export function clearDemoSession(): void {
+  demoAuthUser = null;
+  try {
+    localStorage.removeItem('mindscribe_demo_user');
+  } catch {
+    // localStorage may be unavailable.
+  }
+}
+
+/**
+ * Explicit, opt-in demo session. Only ever called from the "Continue as guest"
+ * button on the landing page - never as an automatic fallback for a failed
+ * Google sign-in. Data stays in localStorage on this device.
+ *
+ * The backend only honours the matching demo token when ALLOW_DEMO_MODE=true.
+ */
 export function loginDemoUser(
-  email = 'ajith.redrigo@gmail.com',
-  displayName = 'Ajith Rodrigo (Evaluator)'
+  email = 'demo@mindscribe.local',
+  displayName = 'Demo User'
 ): User {
   const fakeUser: any = {
     uid: 'demo_' + email.replace(/[^a-zA-Z0-9]/g, '_'),
@@ -149,10 +211,7 @@ export function loginDemoUser(
 }
 
 export async function logoutUser(): Promise<void> {
-  demoAuthUser = null;
-  try {
-    localStorage.removeItem('mindscribe_demo_user');
-  } catch {}
+  clearDemoSession();
   try {
     await fbSignOut(auth);
   } catch (err) {
@@ -168,8 +227,14 @@ export function subscribeAuthState(callback: (user: User | null) => void): Unsub
   }
 
   const fbUnsub = onAuthStateChanged(auth, (firebaseUser) => {
-    if (!demoAuthUser) {
+    if (firebaseUser) {
+      // A real Firebase session always takes precedence over a stale demo one.
+      if (demoAuthUser) clearDemoSession();
       callback(firebaseUser);
+      return;
+    }
+    if (!demoAuthUser) {
+      callback(null);
     }
   });
 
@@ -180,11 +245,30 @@ export function subscribeAuthState(callback: (user: User | null) => void): Unsub
 }
 
 export async function getCurrentUserToken(): Promise<string | null> {
+  if (auth.currentUser) {
+    return auth.currentUser.getIdToken();
+  }
   if (demoAuthUser) {
     return 'demo-token-' + demoAuthUser.uid;
   }
-  if (!auth.currentUser) return null;
-  return auth.currentUser.getIdToken();
+  return null;
+}
+
+/**
+ * fetch() wrapper that attaches the caller's Firebase ID token. Every /api
+ * route requires one; requests without it are rejected with 401.
+ */
+export async function authedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getCurrentUserToken();
+  if (!token) {
+    throw new Error('You must be signed in to perform this action.');
+  }
+  const headers = new Headers(init.headers || {});
+  headers.set('Authorization', `Bearer ${token}`);
+  if (init.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return fetch(input, { ...init, headers });
 }
 
 // Firestore Database CRUD strictly isolated to `/users/{userId}/interactions/{interactionId}`
@@ -646,8 +730,9 @@ export async function initializeUserRole(
   displayName?: string | null
 ): Promise<UserRole> {
   if (!userId) return 'member';
-  const isSuperAdminEmail = email === 'ajith.redrigo@yahoo.com' || email === 'ajith.redrigo@gmail.com' || isDemoUserId(userId);
-  const defaultRole: UserRole = isSuperAdminEmail ? 'superadmin' : 'admin';
+  // New accounts start as `member`. Elevation happens only through an admin
+  // writing /roles/{uid}, which the security rules restrict to admins.
+  const defaultRole: UserRole = isDemoUserId(userId) ? 'superadmin' : 'member';
 
   if (isDemoUserId(userId)) {
     const key = `mindscribe_roles_${userId}`;
@@ -784,17 +869,10 @@ export function subscribeToAllUserRoles(
       onUpdate(list);
     },
     (err) => {
-      console.warn('All roles subscription error (using fallback defaults):', err);
-      onUpdate([
-        {
-          userId: 'demo_user_ajith',
-          role: 'superadmin',
-          email: 'ajith.redrigo@gmail.com',
-          displayName: 'Ajith Rodrigo',
-          grantedAt: new Date().toISOString(),
-          grantedBy: 'system',
-        },
-      ]);
+      // Do not fabricate a role list on failure - an empty list plus a surfaced
+      // error is honest; fake data hides a real permissions problem.
+      console.error('[RBAC] Could not subscribe to roles collection:', err);
+      onUpdate([]);
       onError(err);
     }
   );

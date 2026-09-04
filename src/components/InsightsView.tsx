@@ -32,7 +32,7 @@ import {
   saveActionItem,
   toggleActionItemStatus,
   deleteActionItem,
-  getCurrentUserToken,
+  authedFetch,
 } from '../firebase';
 
 interface InsightsViewProps {
@@ -104,11 +104,6 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
     setError(null);
 
     try {
-      const token = await getCurrentUserToken();
-      if (!token) {
-        throw new Error('You must be signed in to generate reflection intelligence.');
-      }
-
       // Prepare payload with summaries only (respecting data privacy)
       const summariesPayload = entries.map((e) => ({
         id: e.id,
@@ -121,12 +116,8 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
         createdAt: e.createdAt,
       }));
 
-      const res = await fetch('/api/gemini/insights', {
+      const res = await authedFetch('/api/gemini/insights', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({ summaries: summariesPayload }),
       });
 

@@ -1,110 +1,77 @@
-# ==============================================================================
+# =============================================================================
 # Multi-Stage Dockerfile for MindScribe AI Journal (Google Cloud Run)
-# ==============================================================================
+# =============================================================================
 
-# ------------------------------------------------------------------------------
-# Stage 1: Build & Bundle
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Stage 1: Build & bundle
+# -----------------------------------------------------------------------------
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# ------------------------------------------------------------------------------
-# Install dependencies
-# ------------------------------------------------------------------------------
+# Install dependencies from the lockfile for reproducible builds.
+COPY package.json package-lock.json ./
+RUN npm ci
 
-# Copy package manifest first for better Docker layer caching
-COPY package.json ./
-
-# Install all dependencies, including devDependencies required for Vite/esbuild
-RUN npm install
-
-# ------------------------------------------------------------------------------
-# Copy application source and configuration
-# ------------------------------------------------------------------------------
-
-COPY tsconfig.json ./
-COPY vite.config.ts ./
-COPY index.html ./
-COPY metadata.json ./
-COPY firebase-applet-config.json ./
-COPY server.ts ./
-
-# Copy frontend source
+# Application source and configuration
+COPY tsconfig.json vite.config.ts index.html metadata.json server.ts ./
 COPY src/ ./src/
 
-# ------------------------------------------------------------------------------
-# Google Maps API key for Vite build
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Client-side Firebase / Maps configuration
+#
+# Vite inlines VITE_* values at BUILD time, so they are passed as build args
+# rather than copied in from a .env file. These are public browser identifiers,
+# not secrets - the Gemini API key is injected at RUNTIME via Secret Manager and
+# never reaches the client bundle.
+#
+#   docker build \
+#     --build-arg VITE_FIREBASE_API_KEY=... \
+#     --build-arg VITE_FIREBASE_AUTH_DOMAIN=... \
+#     ...
+# -----------------------------------------------------------------------------
+ARG VITE_FIREBASE_API_KEY=""
+ARG VITE_FIREBASE_AUTH_DOMAIN=""
+ARG VITE_FIREBASE_PROJECT_ID=""
+ARG VITE_FIREBASE_STORAGE_BUCKET=""
+ARG VITE_FIREBASE_MESSAGING_SENDER_ID=""
+ARG VITE_FIREBASE_APP_ID=""
+ARG VITE_FIRESTORE_DATABASE_ID=""
+ARG VITE_GOOGLE_MAPS_API_KEY=""
 
-# The .env file must contain:
-#
-# VITE_GOOGLE_MAPS_API_KEY=YOUR_REAL_GOOGLE_MAPS_API_KEY
-#
-# Vite injects VITE_* values at BUILD TIME.
-# This .env file is only used in the builder stage and is NOT copied
-# into the final production runtime image.
-#
-# IMPORTANT:
-# - Use the Google Maps / Places browser API key here.
-# - Do NOT put the Gemini API key here.
-# - Keep .env excluded from GitHub using .gitignore.
-#
-COPY .env ./.env
-
-# ------------------------------------------------------------------------------
-# Build frontend + backend
-# ------------------------------------------------------------------------------
+ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
+    VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN \
+    VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID \
+    VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET \
+    VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID \
+    VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID \
+    VITE_FIRESTORE_DATABASE_ID=$VITE_FIRESTORE_DATABASE_ID \
+    VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
 
 RUN npm run build
 
 
-# ==============================================================================
-# Stage 2: Production Runtime
-# ==============================================================================
+# =============================================================================
+# Stage 2: Production runtime
+# =============================================================================
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# ------------------------------------------------------------------------------
-# Production environment
-# ------------------------------------------------------------------------------
-
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# ------------------------------------------------------------------------------
-# Install runtime dependencies only
-# ------------------------------------------------------------------------------
-
-COPY package.json ./
-
-RUN npm install --omit=dev --ignore-scripts \
+# Runtime dependencies only (vite/esbuild/tailwind stay in the builder stage).
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts \
     && npm cache clean --force
 
-# ------------------------------------------------------------------------------
-# Copy compiled application artifacts
-# ------------------------------------------------------------------------------
-
+# Compiled server bundle + static client assets
 COPY --from=builder /app/dist ./dist
 
-COPY --from=builder /app/firebase-applet-config.json ./
-
-# ------------------------------------------------------------------------------
-# Security
-# ------------------------------------------------------------------------------
-
-# Run as non-root user
+# Run as non-root
 USER node
 
-# ------------------------------------------------------------------------------
-# Cloud Run
-# ------------------------------------------------------------------------------
-
 EXPOSE 8080
-
-# ------------------------------------------------------------------------------
-# Start application
-# ------------------------------------------------------------------------------
 
 CMD ["node", "dist/server.cjs"]

@@ -16,7 +16,7 @@ import {
   ExternalLink,
   ShieldAlert,
 } from 'lucide-react';
-import { saveWebhookConfig, deleteWebhookConfig, logAuditEvent } from '../firebase';
+import { saveWebhookConfig, deleteWebhookConfig, logAuditEvent, authedFetch } from '../firebase';
 
 interface WebhookSettingsModalProps {
   isOpen: boolean;
@@ -121,9 +121,8 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({
     setTestingId(wh.id);
     setTestResult(null);
     try {
-      const res = await fetch('/api/notifications/test', {
+      const res = await authedFetch('/api/notifications/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: wh.url,
           provider: wh.provider,

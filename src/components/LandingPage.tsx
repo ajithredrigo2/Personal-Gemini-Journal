@@ -22,40 +22,53 @@ interface LandingPageProps {
   onSignIn: () => Promise<void>;
   onDemoSignIn?: () => void;
   onOpenSecurityModal: () => void;
+  /** Error raised by the parent's sign-in handler, if any. */
+  authError?: string | null;
+  onDismissAuthError?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onSignIn,
   onDemoSignIn,
   onOpenSecurityModal,
+  authError: externalAuthError,
+  onDismissAuthError,
 }) => {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [localAuthError, setLocalAuthError] = useState<string | null>(null);
   const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
   const [copiedDomain, setCopiedDomain] = useState(false);
+
+  const authError = localAuthError || externalAuthError || null;
+
+  const clearErrors = () => {
+    setLocalAuthError(null);
+    setUnauthorizedDomain(null);
+    onDismissAuthError?.();
+  };
 
   const handleSignInClick = async () => {
     try {
       setIsAuthenticating(true);
-      setAuthError(null);
-      setUnauthorizedDomain(null);
+      clearErrors();
       await onSignIn();
     } catch (err: unknown) {
-      console.warn('Sign in encounter:', err);
+      console.error('Google sign-in failed:', err);
       const errMsg = (err as Error)?.message || '';
-      if (
+      const isUnauthorizedDomain =
         errMsg.includes('auth/unauthorized-domain') ||
         (err as any)?.name === 'UnauthorizedDomainError' ||
-        (err as any)?.code === 'auth/unauthorized-domain'
-      ) {
-        if (onDemoSignIn) {
-          onDemoSignIn();
-        } else {
-          const domain = (err as any)?.domain || (typeof window !== 'undefined' ? window.location.hostname : 'current-domain');
-          setUnauthorizedDomain(domain);
-        }
+        (err as any)?.code === 'auth/unauthorized-domain';
+
+      if (isUnauthorizedDomain) {
+        // Show the fix-it banner. Do NOT auto-switch the user into demo mode -
+        // they clicked "Sign in with Google" and deserve to know why it failed.
+        const domain =
+          (err as any)?.domain ||
+          (typeof window !== 'undefined' ? window.location.hostname : 'current-domain');
+        setUnauthorizedDomain(domain);
       } else {
-        setAuthError(errMsg || 'Authentication encountered an issue. Please retry.');
+        setLocalAuthError(errMsg || 'Authentication encountered an issue. Please retry.');
       }
     } finally {
       setIsAuthenticating(false);
@@ -149,7 +162,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 bg-[#5A5A40]/15 hover:bg-[#5A5A40]/25 text-[#41412A] rounded-xl text-base font-semibold border border-[#5A5A40]/30 transition-all cursor-pointer shadow-xs"
             >
               <UserCheck className="w-4 h-4 text-[#5A5A40]" />
-              <span>Instant Evaluator Access</span>
+              <span>Continue as Guest (Demo)</span>
             </button>
           )}
 
@@ -214,14 +227,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 {onDemoSignIn && (
                   <div className="mt-4 pt-3 border-t border-amber-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                     <span className="text-xs text-amber-900 font-medium">
-                      Want to evaluate without changing Firebase settings?
+                      Want to look around without changing Firebase settings?
                     </span>
                     <button
                       onClick={onDemoSignIn}
                       className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                     >
                       <UserCheck className="w-3.5 h-3.5" />
-                      <span>Continue in Evaluator Demo Mode</span>
+                      <span>Continue as Guest (Demo)</span>
                     </button>
                   </div>
                 )}

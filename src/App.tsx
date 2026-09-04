@@ -39,6 +39,7 @@ export default function App() {
   const [userRole, setUserRoleState] = useState<UserRole>('member');
   const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'new' | 'insights' | 'history' | 'detail' | 'admin'>('new');
   const [selectedEntry, setSelectedEntry] = useState<InteractionEntry | null>(null);
 
@@ -81,9 +82,9 @@ export default function App() {
           );
           setUserRoleState(role);
         } catch (err) {
-          console.warn('Could not initialize user role doc:', err);
-          const isSuperAdmin = firebaseUser.email === 'ajith.redrigo@yahoo.com' || firebaseUser.email === 'ajith.redrigo@gmail.com';
-          setUserRoleState(isSuperAdmin ? 'superadmin' : 'admin');
+          // Fail closed: a role lookup failure must not grant elevated access.
+          console.error('Could not resolve user role, defaulting to member:', err);
+          setUserRoleState('member');
         }
 
         logAuditEvent({
@@ -127,11 +128,11 @@ export default function App() {
         setEntries(fetchedEntries);
         setLoadingEntries(false);
 
-        // Keep selectedEntry in sync if it's currently open
-        if (selectedEntry) {
-          const updated = fetchedEntries.find((e) => e.id === selectedEntry.id);
-          if (updated) setSelectedEntry(updated);
-        }
+        // Keep the open entry in sync without capturing it in the effect's
+        // closure (which would go stale between renders).
+        setSelectedEntry((prev) =>
+          prev ? fetchedEntries.find((e) => e.id === prev.id) ?? prev : prev
+        );
       },
       (err) => {
         console.warn('Subscription to entries notice:', err);
@@ -189,6 +190,7 @@ export default function App() {
   }, [currentUser?.uid]);
 
   const handleSignIn = async () => {
+    setAuthError(null);
     try {
       const user = await loginWithGoogle();
       if (user) {
@@ -201,13 +203,19 @@ export default function App() {
       }
       setActiveView('new');
     } catch (err: unknown) {
-      console.warn('Sign-in handled with fallback:', err);
-      handleDemoSignIn();
+      // Never silently drop into demo mode. Record the message and re-throw so
+      // the landing page can render the specific remediation UI (for example
+      // the "authorize this domain in Firebase" banner).
+      const message = (err as Error)?.message || 'Google sign-in failed. Please try again.';
+      console.error('Google sign-in failed:', err);
+      setAuthError(message);
+      throw err;
     }
   };
 
   const handleDemoSignIn = () => {
-    const demoUser = loginDemoUser('ajith.redrigo@gmail.com', 'Ajith Rodrigo (Evaluator)');
+    setAuthError(null);
+    const demoUser = loginDemoUser();
     setCurrentUser({
       uid: demoUser.uid,
       email: demoUser.email,
@@ -316,6 +324,8 @@ export default function App() {
               onSignIn={handleSignIn}
               onDemoSignIn={handleDemoSignIn}
               onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
+              authError={authError}
+              onDismissAuthError={() => setAuthError(null)}
             />
           ) : (
             <>

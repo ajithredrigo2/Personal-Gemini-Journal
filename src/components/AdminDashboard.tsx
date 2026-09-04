@@ -30,6 +30,7 @@ import {
   setUserRole,
   subscribeToAuditLogs,
   logAuditEvent,
+  authedFetch,
 } from '../firebase';
 
 interface AdminDashboardProps {
@@ -91,7 +92,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
 
     // Fetch live platform metrics from backend API
-    fetch('/api/admin/metrics')
+    authedFetch('/api/admin/metrics')
       .then((res) => res.json())
       .then((data: PlatformMetrics) => {
         setMetrics(data);

@@ -11,3 +11,10 @@ coverage
 .vscode
 .idea
 README.md
+
+# Never bake local secrets into an image
+.env
+.env.*
+!.env.example
+firebase-applet-config.json
+.agents

@@ -2,45 +2,122 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check if the caller is an administrator
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function roleOf(uid) {
+      return exists(/databases/$(database)/documents/roles/$(uid))
+        ? get(/databases/$(database)/documents/roles/$(uid)).data.role
+        : 'member';
+    }
+
     function isAdmin() {
-      return request.auth != null && (
-        request.auth.token.email in ['ajith.redrigo@yahoo.com', 'ajith.redrigo@gmail.com'] ||
-        (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['admin', 'superadmin'])
-      );
+      return isSignedIn() && roleOf(request.auth.uid) in ['admin', 'superadmin'];
     }
 
-    // Helper function to check if caller is superadmin
     function isSuperAdmin() {
-      return request.auth != null && (
-        request.auth.token.email in ['ajith.redrigo@yahoo.com', 'ajith.redrigo@gmail.com'] ||
-        (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'superadmin')
-      );
+      return isSignedIn() && roleOf(request.auth.uid) == 'superadmin';
     }
 
-    // User-isolated collections: interactions, insights, actionItems, webhooks, settings
-    match /users/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && (request.auth.uid == userId || isSuperAdmin());
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Role-based Access Control (RBAC) collection
+    // -----------------------------------------------------------------------
+    // User-isolated data: interactions, insights, actionItems, webhooks
+    //
+    // Strictly owner-bound. Administrators deliberately have NO read access to
+    // other people's journals - privacy is the point of the product, and an
+    // admin role should not be a master key to private reflections.
+    // -----------------------------------------------------------------------
+
+    // NOTE: Firestore rules are OR-ed across matches, so there is deliberately
+    // no broad `/users/{userId}/{document=**}` write rule here - it would
+    // override the per-collection validation below.
+
+    match /users/{userId}/interactions/{interactionId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 300
+        && (!('summary' in request.resource.data)
+            || request.resource.data.summary.size() <= 4000)
+        && (!('messages' in request.resource.data)
+            || request.resource.data.messages.size() <= 60);
+    }
+
+    match /users/{userId}/insights/{insightId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+    }
+
+    match /users/{userId}/actionItems/{actionItemId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 500
+        && request.resource.data.status in ['open', 'completed'];
+    }
+
+    match /users/{userId}/webhooks/{webhookId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.url is string
+        && request.resource.data.url.matches('https://.*')
+        && request.resource.data.url.size() <= 2048
+        && request.resource.data.provider in ['slack', 'discord', 'custom'];
+    }
+
+    // -----------------------------------------------------------------------
+    // Role-Based Access Control
+    //
+    // A user may READ their own role but may never WRITE any role document -
+    // self-promotion to superadmin was previously possible and is now closed.
+    // Role changes are made by an admin, or out-of-band via the Admin SDK.
+    // -----------------------------------------------------------------------
+
     match /roles/{userId} {
-      // Any authenticated user can read their own role; Admins can read all user roles
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      // Users can bootstrap their own default role on sign up; Admins can create/assign roles
-      allow create: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      // Users can update their own role (for switcher) and Admins can update any role
-      allow update, delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Self-bootstrap on first sign-in, pinned to the 'member' role only.
+      allow create: if isOwner(userId)
+        && request.resource.data.role == 'member'
+        && request.resource.data.userId == userId;
+
+      // Only admins may change a role; only superadmins may mint superadmins.
+      allow update: if isAdmin()
+        && request.resource.data.userId == userId
+        && (request.resource.data.role != 'superadmin' || isSuperAdmin());
+
+      allow delete: if isSuperAdmin();
     }
 
+    // -----------------------------------------------------------------------
     // Security & System Audit Logs
+    //
+    // Append-only. Only admins may read the log; nobody may edit or remove
+    // entries, so the trail cannot be rewritten after the fact. Each entry is
+    // pinned to the caller's own uid so events cannot be attributed to others.
+    // -----------------------------------------------------------------------
+
     match /audit_logs/{logId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if isSuperAdmin();
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 1000;
+      allow update, delete: if false;
+    }
+
+    // Deny everything not explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
-
