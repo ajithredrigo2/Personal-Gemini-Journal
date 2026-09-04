@@ -1,6 +1,5 @@
 # ==============================================================================
 # Multi-Stage Dockerfile for MindScribe AI Journal (Google Cloud Run)
-# Optimized for security, minimal image size, and fast cold-starts
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -8,51 +7,104 @@
 # ------------------------------------------------------------------------------
 FROM node:20-alpine AS builder
 
-# Install build dependencies
 WORKDIR /app
 
-# Copy package manifests for efficient layer caching
+# ------------------------------------------------------------------------------
+# Install dependencies
+# ------------------------------------------------------------------------------
+
+# Copy package manifest first for better Docker layer caching
 COPY package.json ./
 
-# Install all dependencies (including devDependencies required for build)
+# Install all dependencies, including devDependencies required for Vite/esbuild
 RUN npm install
 
-# Copy source code and configuration files
+# ------------------------------------------------------------------------------
+# Copy application source and configuration
+# ------------------------------------------------------------------------------
+
 COPY tsconfig.json ./
 COPY vite.config.ts ./
 COPY index.html ./
 COPY metadata.json ./
 COPY firebase-applet-config.json ./
 COPY server.ts ./
+
+# Copy frontend source
 COPY src/ ./src/
 
-# Compile frontend static assets (Vite) and backend bundle (esbuild) to /app/dist
-RUN npm run build
+# ------------------------------------------------------------------------------
+# Google Maps API key for Vite build
+# ------------------------------------------------------------------------------
+
+# The .env file must contain:
+#
+# VITE_GOOGLE_MAPS_API_KEY=YOUR_REAL_GOOGLE_MAPS_API_KEY
+#
+# Vite injects VITE_* values at BUILD TIME.
+# This .env file is only used in the builder stage and is NOT copied
+# into the final production runtime image.
+#
+# IMPORTANT:
+# - Use the Google Maps / Places browser API key here.
+# - Do NOT put the Gemini API key here.
+# - Keep .env excluded from GitHub using .gitignore.
+#
+COPY .env ./.env
 
 # ------------------------------------------------------------------------------
-# Stage 2: Production Minimal Runtime
+# Build frontend + backend
 # ------------------------------------------------------------------------------
+
+RUN npm run build
+
+
+# ==============================================================================
+# Stage 2: Production Runtime
+# ==============================================================================
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Set production environment variables
+# ------------------------------------------------------------------------------
+# Production environment
+# ------------------------------------------------------------------------------
+
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Copy package manifest and install runtime dependencies only
-COPY package.json ./
-RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+# ------------------------------------------------------------------------------
+# Install runtime dependencies only
+# ------------------------------------------------------------------------------
 
-# Copy compiled distribution artifacts from builder stage
+COPY package.json ./
+
+RUN npm install --omit=dev --ignore-scripts \
+    && npm cache clean --force
+
+# ------------------------------------------------------------------------------
+# Copy compiled application artifacts
+# ------------------------------------------------------------------------------
+
 COPY --from=builder /app/dist ./dist
+
 COPY --from=builder /app/firebase-applet-config.json ./
 
-# Security: Run as non-root user (least-privilege principle)
+# ------------------------------------------------------------------------------
+# Security
+# ------------------------------------------------------------------------------
+
+# Run as non-root user
 USER node
 
-# Expose default Cloud Run container port
+# ------------------------------------------------------------------------------
+# Cloud Run
+# ------------------------------------------------------------------------------
+
 EXPOSE 8080
 
-# Start server entry point
+# ------------------------------------------------------------------------------
+# Start application
+# ------------------------------------------------------------------------------
+
 CMD ["node", "dist/server.cjs"]
