@@ -9,3 +9,4 @@ coverage/
 .env
 firebase-applet-config.json
 firebase-applet-config.json*
+firebase-applet-config.json
