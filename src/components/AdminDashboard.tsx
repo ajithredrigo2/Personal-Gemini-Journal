@@ -145,7 +145,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setStatusMessage(`Role successfully updated to ${newRole.toUpperCase()}`);
       setTimeout(() => setStatusMessage(null), 3000);
     } catch (err: unknown) {
-      console.error('Failed to set user role:', err);
+      console.warn('Set user role notice:', err);
       setStatusMessage(`Failed to update role: ${(err as Error)?.message}`);
       setTimeout(() => setStatusMessage(null), 4000);
     }

@@ -192,7 +192,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       setSearchQuery('');
       setSuggestions([]);
     } catch (err) {
-      console.error('Failed to fetch full place details:', err);
+      console.warn('Fetch full place details notice:', err);
       setSearchError('Could not load detailed place coordinates.');
     } finally {
       setIsSearching(false);

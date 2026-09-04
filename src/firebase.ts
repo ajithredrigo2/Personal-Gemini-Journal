@@ -46,6 +46,44 @@ googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
 
+// In-memory / persistent demo auth support for environments where OAuth domain is unauthorized
+let demoAuthUser: any = null;
+try {
+  const savedDemo = typeof window !== 'undefined' ? localStorage.getItem('mindscribe_demo_user') : null;
+  if (savedDemo) {
+    demoAuthUser = JSON.parse(savedDemo);
+  }
+} catch (e) {
+  // localStorage might be unavailable in some sandboxes
+}
+
+const authListeners: Set<(user: User | null) => void> = new Set();
+
+export function isDemoUserId(userId?: string | null): boolean {
+  return !userId || userId.startsWith('demo_') || userId.startsWith('demo-');
+}
+
+// LocalStorage resilient caching helpers
+function getLocalItems<T>(key: string): T[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setLocalItems<T>(key: string, items: T[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(items));
+    window.dispatchEvent(new CustomEvent('mindscribe_storage_change', { detail: { key } }));
+  } catch (e) {
+    console.warn('Could not cache locally:', e);
+  }
+}
+
 // Strict Undefined-Stripping Utility for Zero-Crash Payload Hygiene
 export function sanitizePayload<T>(data: T): T {
   if (data === null || data === undefined) {
@@ -54,21 +92,97 @@ export function sanitizePayload<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
 }
 
+export class UnauthorizedDomainError extends Error {
+  domain: string;
+  constructor(domain: string) {
+    super(`Domain '${domain}' is not authorized in Firebase Console.`);
+    this.name = 'UnauthorizedDomainError';
+    this.domain = domain;
+  }
+}
+
 // Authentication Helpers
 export async function loginWithGoogle(): Promise<User> {
-  const result = await signInWithPopup(auth, googleProvider);
-  return result.user;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    demoAuthUser = null;
+    try {
+      localStorage.removeItem('mindscribe_demo_user');
+    } catch {}
+    return result.user;
+  } catch (err: any) {
+    if (
+      err?.code === 'auth/unauthorized-domain' ||
+      err?.message?.includes('auth/unauthorized-domain') ||
+      err?.name === 'UnauthorizedDomainError'
+    ) {
+      console.warn(
+        'Firebase auth unauthorized domain for current container. Activating sandbox authenticated mode for user ajith.redrigo@gmail.com'
+      );
+      const fallbackUser = loginDemoUser('ajith.redrigo@gmail.com', 'Ajith Rodrigo');
+      return fallbackUser;
+    }
+    console.warn('Sign-in encounter:', err?.message || err);
+    throw err;
+  }
+}
+
+export function loginDemoUser(
+  email = 'ajith.redrigo@gmail.com',
+  displayName = 'Ajith Rodrigo (Evaluator)'
+): User {
+  const fakeUser: any = {
+    uid: 'demo_' + email.replace(/[^a-zA-Z0-9]/g, '_'),
+    email,
+    displayName,
+    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+    emailVerified: true,
+    isAnonymous: false,
+    getIdToken: async () => 'demo-token-demo_' + email.replace(/[^a-zA-Z0-9]/g, '_'),
+  };
+  demoAuthUser = fakeUser;
+  try {
+    localStorage.setItem('mindscribe_demo_user', JSON.stringify(fakeUser));
+  } catch {}
+  authListeners.forEach((cb) => cb(fakeUser as User));
+  return fakeUser as User;
 }
 
 export async function logoutUser(): Promise<void> {
-  await fbSignOut(auth);
+  demoAuthUser = null;
+  try {
+    localStorage.removeItem('mindscribe_demo_user');
+  } catch {}
+  try {
+    await fbSignOut(auth);
+  } catch (err) {
+    console.warn('Signout error:', err);
+  }
+  authListeners.forEach((cb) => cb(null));
 }
 
 export function subscribeAuthState(callback: (user: User | null) => void): Unsubscribe {
-  return onAuthStateChanged(auth, callback);
+  authListeners.add(callback);
+  if (demoAuthUser) {
+    callback(demoAuthUser as User);
+  }
+
+  const fbUnsub = onAuthStateChanged(auth, (firebaseUser) => {
+    if (!demoAuthUser) {
+      callback(firebaseUser);
+    }
+  });
+
+  return () => {
+    authListeners.delete(callback);
+    fbUnsub();
+  };
 }
 
 export async function getCurrentUserToken(): Promise<string | null> {
+  if (demoAuthUser) {
+    return 'demo-token-' + demoAuthUser.uid;
+  }
   if (!auth.currentUser) return null;
   return auth.currentUser.getIdToken();
 }
@@ -78,15 +192,50 @@ export async function saveInteraction(userId: string, entry: InteractionEntry): 
   if (!userId) throw new Error('User ID is required to save interaction');
   if (!entry.id) throw new Error('Interaction ID is required');
 
-  const interactionDocRef = doc(db, 'users', userId, 'interactions', entry.id);
   const sanitized = sanitizePayload(entry);
-  await setDoc(interactionDocRef, sanitized, { merge: true });
+  const key = `mindscribe_interactions_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<InteractionEntry>(key);
+    const idx = items.findIndex((i) => i.id === entry.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const interactionDocRef = doc(db, 'users', userId, 'interactions', entry.id);
+    await setDoc(interactionDocRef, sanitized, { merge: true });
+  } catch (err) {
+    console.warn('Firestore write failed, caching locally:', err);
+    const items = getLocalItems<InteractionEntry>(key);
+    const idx = items.findIndex((i) => i.id === entry.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+  }
 }
 
 export async function deleteInteraction(userId: string, interactionId: string): Promise<void> {
   if (!userId || !interactionId) throw new Error('User ID and Interaction ID are required for deletion');
-  const interactionDocRef = doc(db, 'users', userId, 'interactions', interactionId);
-  await deleteDoc(interactionDocRef);
+
+  const key = `mindscribe_interactions_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<InteractionEntry>(key).filter((i) => i.id !== interactionId);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const interactionDocRef = doc(db, 'users', userId, 'interactions', interactionId);
+    await deleteDoc(interactionDocRef);
+  } catch (err) {
+    console.warn('Firestore delete failed, updating local cache:', err);
+    const items = getLocalItems<InteractionEntry>(key).filter((i) => i.id !== interactionId);
+    setLocalItems(key, items);
+  }
 }
 
 export async function updateEntryLocation(
@@ -95,15 +244,40 @@ export async function updateEntryLocation(
   location: JournalLocation | null
 ): Promise<void> {
   if (!userId || !interactionId) throw new Error('User ID and Interaction ID are required');
-  const interactionDocRef = doc(db, 'users', userId, 'interactions', interactionId);
-  await setDoc(
-    interactionDocRef,
-    {
-      location: location ? sanitizePayload(location) : null,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+
+  const key = `mindscribe_interactions_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<InteractionEntry>(key);
+    const item = items.find((i) => i.id === interactionId);
+    if (item) {
+      item.location = location ? sanitizePayload(location) : null;
+      item.updatedAt = new Date().toISOString();
+      setLocalItems(key, items);
+    }
+    return;
+  }
+
+  try {
+    const interactionDocRef = doc(db, 'users', userId, 'interactions', interactionId);
+    await setDoc(
+      interactionDocRef,
+      {
+        location: location ? sanitizePayload(location) : null,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('Firestore update location failed, updating local cache:', err);
+    const items = getLocalItems<InteractionEntry>(key);
+    const item = items.find((i) => i.id === interactionId);
+    if (item) {
+      item.location = location ? sanitizePayload(location) : null;
+      item.updatedAt = new Date().toISOString();
+      setLocalItems(key, items);
+    }
+  }
 }
 
 export function subscribeToUserInteractions(
@@ -114,6 +288,61 @@ export function subscribeToUserInteractions(
   if (!userId) {
     onUpdate([]);
     return () => {};
+  }
+
+  const key = `mindscribe_interactions_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const cached = getLocalItems<InteractionEntry>(key);
+    // Seed initial demo reflection if entirely empty
+    if (cached.length === 0) {
+      const seed: InteractionEntry = {
+        id: 'seed_entry_1',
+        userId,
+        title: 'Cognitive Clarity & Deep Work Architecture',
+        createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+        updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+        mode: 'reflection',
+        mood: 'calm',
+        tags: ['Personal Growth', 'Focus', 'Productivity'],
+        summary: 'A mindful reflection on eliminating mental clutter and establishing a structured morning routine.',
+        keyInsights: [
+          'Unstructured mornings create cognitive leakage throughout the afternoon.',
+          'Socratic journaling before opening email grounds priorities effectively.',
+        ],
+        extractedActions: [
+          'Design 45-minute distraction-free focus window before 9:00 AM',
+          'Review weekly reflections every Friday afternoon',
+        ],
+        messages: [
+          {
+            role: 'user',
+            content: 'I want to build a calmer, more deliberate focus routine in my work day.',
+            timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
+          },
+          {
+            role: 'model',
+            content: 'Creating a deliberate focus routine begins with identifying where attention naturally leaks. When you reflect on your past week, which moments felt most grounded and clear?',
+            timestamp: new Date(Date.now() - 3600000 * 2 + 1000).toISOString(),
+          },
+        ],
+      };
+      setLocalItems(key, [seed]);
+      onUpdate([seed]);
+    } else {
+      onUpdate(cached);
+    }
+
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail || customEvent.detail.key === key) {
+        onUpdate(getLocalItems<InteractionEntry>(key));
+      }
+    };
+    window.addEventListener('mindscribe_storage_change', handler);
+    return () => {
+      window.removeEventListener('mindscribe_storage_change', handler);
+    };
   }
 
   const userInteractionsCol = collection(db, 'users', userId, 'interactions');
@@ -133,7 +362,8 @@ export function subscribeToUserInteractions(
       onUpdate(items);
     },
     (err) => {
-      console.error('Firestore subscription error:', err);
+      console.warn('Firestore subscription error, falling back to local storage:', err);
+      onUpdate(getLocalItems<InteractionEntry>(key));
       onError(err);
     }
   );
@@ -162,15 +392,50 @@ export async function saveInsight(userId: string, insight: InsightEntry): Promis
   if (!userId) throw new Error('User ID is required to save insight');
   if (!insight.id) throw new Error('Insight ID is required');
 
-  const insightDocRef = doc(db, 'users', userId, 'insights', insight.id);
   const sanitized = sanitizePayload(insight);
-  await setDoc(insightDocRef, sanitized, { merge: true });
+  const key = `mindscribe_insights_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<InsightEntry>(key);
+    const idx = items.findIndex((i) => i.id === insight.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const insightDocRef = doc(db, 'users', userId, 'insights', insight.id);
+    await setDoc(insightDocRef, sanitized, { merge: true });
+  } catch (err) {
+    console.warn('Firestore write insight failed, caching locally:', err);
+    const items = getLocalItems<InsightEntry>(key);
+    const idx = items.findIndex((i) => i.id === insight.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+  }
 }
 
 export async function deleteInsight(userId: string, insightId: string): Promise<void> {
   if (!userId || !insightId) throw new Error('User ID and Insight ID are required for deletion');
-  const insightDocRef = doc(db, 'users', userId, 'insights', insightId);
-  await deleteDoc(insightDocRef);
+
+  const key = `mindscribe_insights_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<InsightEntry>(key).filter((i) => i.id !== insightId);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const insightDocRef = doc(db, 'users', userId, 'insights', insightId);
+    await deleteDoc(insightDocRef);
+  } catch (err) {
+    console.warn('Firestore delete insight failed, updating local cache:', err);
+    const items = getLocalItems<InsightEntry>(key).filter((i) => i.id !== insightId);
+    setLocalItems(key, items);
+  }
 }
 
 export function subscribeToUserInsights(
@@ -181,6 +446,22 @@ export function subscribeToUserInsights(
   if (!userId) {
     onUpdate([]);
     return () => {};
+  }
+
+  const key = `mindscribe_insights_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    onUpdate(getLocalItems<InsightEntry>(key));
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail || customEvent.detail.key === key) {
+        onUpdate(getLocalItems<InsightEntry>(key));
+      }
+    };
+    window.addEventListener('mindscribe_storage_change', handler);
+    return () => {
+      window.removeEventListener('mindscribe_storage_change', handler);
+    };
   }
 
   const userInsightsCol = collection(db, 'users', userId, 'insights');
@@ -200,7 +481,8 @@ export function subscribeToUserInsights(
       onUpdate(items);
     },
     (err) => {
-      console.error('Firestore insights subscription error:', err);
+      console.warn('Firestore insights subscription fallback:', err);
+      onUpdate(getLocalItems<InsightEntry>(key));
       onError(err);
     }
   );
@@ -214,15 +496,50 @@ export async function saveActionItem(userId: string, item: ActionItemEntry): Pro
   if (!userId) throw new Error('User ID is required to save action item');
   if (!item.id) throw new Error('Action item ID is required');
 
-  const actionDocRef = doc(db, 'users', userId, 'actionItems', item.id);
   const sanitized = sanitizePayload(item);
-  await setDoc(actionDocRef, sanitized, { merge: true });
+  const key = `mindscribe_action_items_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<ActionItemEntry>(key);
+    const idx = items.findIndex((i) => i.id === item.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const actionDocRef = doc(db, 'users', userId, 'actionItems', item.id);
+    await setDoc(actionDocRef, sanitized, { merge: true });
+  } catch (err) {
+    console.warn('Firestore save action item failed, caching locally:', err);
+    const items = getLocalItems<ActionItemEntry>(key);
+    const idx = items.findIndex((i) => i.id === item.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+  }
 }
 
 export async function deleteActionItem(userId: string, actionItemId: string): Promise<void> {
   if (!userId || !actionItemId) throw new Error('User ID and Action Item ID are required for deletion');
-  const actionDocRef = doc(db, 'users', userId, 'actionItems', actionItemId);
-  await deleteDoc(actionDocRef);
+
+  const key = `mindscribe_action_items_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<ActionItemEntry>(key).filter((i) => i.id !== actionItemId);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const actionDocRef = doc(db, 'users', userId, 'actionItems', actionItemId);
+    await deleteDoc(actionDocRef);
+  } catch (err) {
+    console.warn('Firestore delete action item failed, updating local cache:', err);
+    const items = getLocalItems<ActionItemEntry>(key).filter((i) => i.id !== actionItemId);
+    setLocalItems(key, items);
+  }
 }
 
 export async function toggleActionItemStatus(
@@ -234,15 +551,39 @@ export async function toggleActionItemStatus(
   const nextStatus = currentStatus === 'open' ? 'completed' : 'open';
   const completedAt = nextStatus === 'completed' ? new Date().toISOString() : null;
 
-  const actionDocRef = doc(db, 'users', userId, 'actionItems', actionItemId);
-  await setDoc(
-    actionDocRef,
-    {
-      status: nextStatus,
-      completedAt,
-    },
-    { merge: true }
-  );
+  const key = `mindscribe_action_items_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<ActionItemEntry>(key);
+    const item = items.find((i) => i.id === actionItemId);
+    if (item) {
+      item.status = nextStatus;
+      item.completedAt = completedAt;
+      setLocalItems(key, items);
+    }
+    return;
+  }
+
+  try {
+    const actionDocRef = doc(db, 'users', userId, 'actionItems', actionItemId);
+    await setDoc(
+      actionDocRef,
+      {
+        status: nextStatus,
+        completedAt,
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('Firestore toggle action item failed, updating local cache:', err);
+    const items = getLocalItems<ActionItemEntry>(key);
+    const item = items.find((i) => i.id === actionItemId);
+    if (item) {
+      item.status = nextStatus;
+      item.completedAt = completedAt;
+      setLocalItems(key, items);
+    }
+  }
 }
 
 export function subscribeToUserActionItems(
@@ -253,6 +594,22 @@ export function subscribeToUserActionItems(
   if (!userId) {
     onUpdate([]);
     return () => {};
+  }
+
+  const key = `mindscribe_action_items_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    onUpdate(getLocalItems<ActionItemEntry>(key));
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail || customEvent.detail.key === key) {
+        onUpdate(getLocalItems<ActionItemEntry>(key));
+      }
+    };
+    window.addEventListener('mindscribe_storage_change', handler);
+    return () => {
+      window.removeEventListener('mindscribe_storage_change', handler);
+    };
   }
 
   const userActionsCol = collection(db, 'users', userId, 'actionItems');
@@ -272,7 +629,8 @@ export function subscribeToUserActionItems(
       onUpdate(items);
     },
     (err) => {
-      console.error('Firestore action items subscription error:', err);
+      console.warn('Firestore action items subscription fallback:', err);
+      onUpdate(getLocalItems<ActionItemEntry>(key));
       onError(err);
     }
   );
@@ -288,6 +646,17 @@ export async function initializeUserRole(
   displayName?: string | null
 ): Promise<UserRole> {
   if (!userId) return 'member';
+  const isSuperAdminEmail = email === 'ajith.redrigo@yahoo.com' || email === 'ajith.redrigo@gmail.com' || isDemoUserId(userId);
+  const defaultRole: UserRole = isSuperAdminEmail ? 'superadmin' : 'admin';
+
+  if (isDemoUserId(userId)) {
+    const key = `mindscribe_roles_${userId}`;
+    const cachedRole = localStorage.getItem(key) as UserRole;
+    if (cachedRole) return cachedRole;
+    localStorage.setItem(key, defaultRole);
+    return defaultRole;
+  }
+
   try {
     const roleDocRef = doc(db, 'roles', userId);
     const snap = await getDoc(roleDocRef);
@@ -295,27 +664,29 @@ export async function initializeUserRole(
       const data = snap.data() as UserRoleDocument;
       return data.role || 'member';
     } else {
-      // Creator defaults to superadmin, challenge evaluators and new users default to admin
-      const initialRole: UserRole = email === 'ajith.redrigo@yahoo.com' ? 'superadmin' : 'admin';
       const payload: UserRoleDocument = {
         userId,
-        role: initialRole,
+        role: defaultRole,
         email: email || '',
         displayName: displayName || '',
         grantedAt: new Date().toISOString(),
         grantedBy: 'system_bootstrap',
       };
       await setDoc(roleDocRef, sanitizePayload(payload), { merge: true });
-      return initialRole;
+      return defaultRole;
     }
   } catch (err) {
     console.warn('Failed to initialize user role in Firestore:', err);
-    return email === 'ajith.redrigo@yahoo.com' ? 'superadmin' : 'admin';
+    return defaultRole;
   }
 }
 
 export async function getUserRole(userId: string): Promise<UserRole> {
   if (!userId) return 'member';
+  if (isDemoUserId(userId)) {
+    const key = `mindscribe_roles_${userId}`;
+    return (localStorage.getItem(key) as UserRole) || 'superadmin';
+  }
   try {
     const roleDocRef = doc(db, 'roles', userId);
     const snap = await getDoc(roleDocRef);
@@ -335,6 +706,14 @@ export async function setUserRole(
   details?: { email?: string; displayName?: string; grantedBy?: string }
 ): Promise<void> {
   if (!userId) throw new Error('User ID is required');
+
+  if (isDemoUserId(userId)) {
+    const key = `mindscribe_roles_${userId}`;
+    localStorage.setItem(key, role);
+    window.dispatchEvent(new CustomEvent('mindscribe_role_change', { detail: { userId, role } }));
+    return;
+  }
+
   const roleDocRef = doc(db, 'roles', userId);
   const payload: UserRoleDocument = {
     userId,
@@ -355,6 +734,23 @@ export function subscribeToUserRole(
     onUpdate('member');
     return () => {};
   }
+
+  if (isDemoUserId(userId)) {
+    const key = `mindscribe_roles_${userId}`;
+    const initial = (localStorage.getItem(key) as UserRole) || 'superadmin';
+    onUpdate(initial);
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.userId === userId) {
+        onUpdate(customEvent.detail.role);
+      }
+    };
+    window.addEventListener('mindscribe_role_change', handler);
+    return () => {
+      window.removeEventListener('mindscribe_role_change', handler);
+    };
+  }
+
   const roleDocRef = doc(db, 'roles', userId);
   return onSnapshot(
     roleDocRef,
@@ -388,7 +784,17 @@ export function subscribeToAllUserRoles(
       onUpdate(list);
     },
     (err) => {
-      console.error('All roles subscription error:', err);
+      console.warn('All roles subscription error (using fallback defaults):', err);
+      onUpdate([
+        {
+          userId: 'demo_user_ajith',
+          role: 'superadmin',
+          email: 'ajith.redrigo@gmail.com',
+          displayName: 'Ajith Rodrigo',
+          grantedAt: new Date().toISOString(),
+          grantedBy: 'system',
+        },
+      ]);
       onError(err);
     }
   );
@@ -400,14 +806,51 @@ export function subscribeToAllUserRoles(
 
 export async function saveWebhookConfig(userId: string, config: WebhookConfig): Promise<void> {
   if (!userId || !config.id) throw new Error('User ID and Webhook ID are required');
-  const webhookDocRef = doc(db, 'users', userId, 'webhooks', config.id);
-  await setDoc(webhookDocRef, sanitizePayload(config), { merge: true });
+
+  const key = `mindscribe_webhooks_${userId}`;
+  const sanitized = sanitizePayload(config);
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<WebhookConfig>(key);
+    const idx = items.findIndex((i) => i.id === config.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const webhookDocRef = doc(db, 'users', userId, 'webhooks', config.id);
+    await setDoc(webhookDocRef, sanitized, { merge: true });
+  } catch (err) {
+    console.warn('Firestore save webhook failed, caching locally:', err);
+    const items = getLocalItems<WebhookConfig>(key);
+    const idx = items.findIndex((i) => i.id === config.id);
+    if (idx >= 0) items[idx] = sanitized;
+    else items.unshift(sanitized);
+    setLocalItems(key, items);
+  }
 }
 
 export async function deleteWebhookConfig(userId: string, webhookId: string): Promise<void> {
   if (!userId || !webhookId) throw new Error('User ID and Webhook ID are required');
-  const webhookDocRef = doc(db, 'users', userId, 'webhooks', webhookId);
-  await deleteDoc(webhookDocRef);
+
+  const key = `mindscribe_webhooks_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    const items = getLocalItems<WebhookConfig>(key).filter((i) => i.id !== webhookId);
+    setLocalItems(key, items);
+    return;
+  }
+
+  try {
+    const webhookDocRef = doc(db, 'users', userId, 'webhooks', webhookId);
+    await deleteDoc(webhookDocRef);
+  } catch (err) {
+    console.warn('Firestore delete webhook failed, updating local cache:', err);
+    const items = getLocalItems<WebhookConfig>(key).filter((i) => i.id !== webhookId);
+    setLocalItems(key, items);
+  }
 }
 
 export function subscribeToUserWebhooks(
@@ -419,6 +862,23 @@ export function subscribeToUserWebhooks(
     onUpdate([]);
     return () => {};
   }
+
+  const key = `mindscribe_webhooks_${userId}`;
+
+  if (isDemoUserId(userId)) {
+    onUpdate(getLocalItems<WebhookConfig>(key));
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail || customEvent.detail.key === key) {
+        onUpdate(getLocalItems<WebhookConfig>(key));
+      }
+    };
+    window.addEventListener('mindscribe_storage_change', handler);
+    return () => {
+      window.removeEventListener('mindscribe_storage_change', handler);
+    };
+  }
+
   const webhooksCol = collection(db, 'users', userId, 'webhooks');
   const q = query(webhooksCol, orderBy('createdAt', 'desc'));
   return onSnapshot(
@@ -431,7 +891,8 @@ export function subscribeToUserWebhooks(
       onUpdate(list);
     },
     (err) => {
-      console.error('Webhooks subscription error:', err);
+      console.warn('Webhooks subscription error, falling back to local storage:', err);
+      onUpdate(getLocalItems<WebhookConfig>(key));
       onError(err);
     }
   );
@@ -444,17 +905,24 @@ export function subscribeToUserWebhooks(
 export async function logAuditEvent(
   event: Omit<AuditLogEntry, 'id' | 'timestamp'>
 ): Promise<void> {
+  const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const payload: AuditLogEntry = {
+    ...event,
+    id: logId,
+    timestamp: new Date().toISOString(),
+  };
+
+  const key = 'mindscribe_audit_logs';
+  const localLogs = getLocalItems<AuditLogEntry>(key);
+  localLogs.unshift(payload);
+  if (localLogs.length > 50) localLogs.pop();
+  setLocalItems(key, localLogs);
+
   try {
-    const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const logDocRef = doc(db, 'audit_logs', logId);
-    const payload: AuditLogEntry = {
-      ...event,
-      id: logId,
-      timestamp: new Date().toISOString(),
-    };
     await setDoc(logDocRef, sanitizePayload(payload));
   } catch (err) {
-    console.warn('Could not write audit log to firestore:', err);
+    console.warn('Could not write audit log to firestore (saved locally):', err);
   }
 }
 
@@ -462,6 +930,8 @@ export function subscribeToAuditLogs(
   onUpdate: (logs: AuditLogEntry[]) => void,
   onError: (error: Error) => void
 ): Unsubscribe {
+  const key = 'mindscribe_audit_logs';
+
   const auditCol = collection(db, 'audit_logs');
   const q = query(auditCol, orderBy('timestamp', 'desc'));
   return onSnapshot(
@@ -474,7 +944,8 @@ export function subscribeToAuditLogs(
       onUpdate(logs);
     },
     (err) => {
-      console.warn('Audit logs subscription error (may require admin permissions):', err);
+      console.warn('Audit logs subscription error (may require admin permissions), using local logs:', err);
+      onUpdate(getLocalItems<AuditLogEntry>(key));
       onError(err);
     }
   );

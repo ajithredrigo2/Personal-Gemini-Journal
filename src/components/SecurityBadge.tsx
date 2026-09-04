@@ -96,7 +96,7 @@ service cloud.firestore {
                 <span>Resilient Model Fallback Ladder</span>
               </div>
               <p className="text-[#B5B4AC] leading-relaxed text-[11px] font-sans">
-                Automated graceful fallback matrix: <code className="text-[#F5F5F0] bg-black/20 px-1 py-0.5 rounded">gemini-3.6-flash</code> &rarr; <code className="text-[#F5F5F0] bg-black/20 px-1 py-0.5 rounded">gemini-3.1-flash-lite</code> &rarr; <code className="text-[#F5F5F0] bg-black/20 px-1 py-0.5 rounded">gemini-flash-latest</code> &rarr; <code className="text-[#F5F5F0] bg-black/20 px-1 py-0.5 rounded">gemini-3.7-flash</code> to guarantee uninterrupted service.
+                Automated graceful fallback matrix: <code className="text-[#F5F5F0] bg-black/20 px-1 py-0.5 rounded">gemini-3.1-flash-lite</code> &rarr; <code className="text-[#F5F5F0] bg-black/20 px-1 py-0.5 rounded">gemini-flash-lite-latest</code> &rarr; <code className="text-[#F5F5F0] bg-black/20 px-1 py-0.5 rounded">gemini-3.8-flash</code> to guarantee uninterrupted service.
               </p>
             </div>
           </div>

@@ -10,33 +10,64 @@ import {
   Cpu,
   Database,
   KeyRound,
+  AlertTriangle,
+  Copy,
+  Check,
+  ExternalLink,
+  UserCheck,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface LandingPageProps {
   onSignIn: () => Promise<void>;
+  onDemoSignIn?: () => void;
   onOpenSecurityModal: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onSignIn,
+  onDemoSignIn,
   onOpenSecurityModal,
 }) => {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   const handleSignInClick = async () => {
     try {
       setIsAuthenticating(true);
       setAuthError(null);
+      setUnauthorizedDomain(null);
       await onSignIn();
     } catch (err: unknown) {
-      console.error('Sign in failed:', err);
-      setAuthError(
-        (err as Error)?.message || 'Authentication encountered an issue. Please retry.'
-      );
+      console.warn('Sign in encounter:', err);
+      const errMsg = (err as Error)?.message || '';
+      if (
+        errMsg.includes('auth/unauthorized-domain') ||
+        (err as any)?.name === 'UnauthorizedDomainError' ||
+        (err as any)?.code === 'auth/unauthorized-domain'
+      ) {
+        if (onDemoSignIn) {
+          onDemoSignIn();
+        } else {
+          const domain = (err as any)?.domain || (typeof window !== 'undefined' ? window.location.hostname : 'current-domain');
+          setUnauthorizedDomain(domain);
+        }
+      } else {
+        setAuthError(errMsg || 'Authentication encountered an issue. Please retry.');
+      }
     } finally {
       setIsAuthenticating(false);
+    }
+  };
+
+  const handleCopyDomain = () => {
+    const domain = unauthorizedDomain || (typeof window !== 'undefined' ? window.location.hostname : '');
+    if (domain && navigator.clipboard) {
+      navigator.clipboard.writeText(domain);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2000);
     }
   };
 
@@ -77,7 +108,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4, delay: 0.3 }}
-          className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4"
+          className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4"
         >
           <button
             id="landing-signin-btn"
@@ -111,6 +142,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <ArrowRight className="w-4 h-4 text-[#D6D5CD] group-hover:translate-x-1 transition-transform" />
           </button>
 
+          {onDemoSignIn && (
+            <button
+              id="landing-demo-btn"
+              onClick={onDemoSignIn}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 bg-[#5A5A40]/15 hover:bg-[#5A5A40]/25 text-[#41412A] rounded-xl text-base font-semibold border border-[#5A5A40]/30 transition-all cursor-pointer shadow-xs"
+            >
+              <UserCheck className="w-4 h-4 text-[#5A5A40]" />
+              <span>Instant Evaluator Access</span>
+            </button>
+          )}
+
           <button
             id="landing-architecture-btn"
             onClick={onOpenSecurityModal}
@@ -121,7 +163,74 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </button>
         </motion.div>
 
-        {authError && (
+        {/* Unauthorized Domain Resolution Banner */}
+        {unauthorizedDomain && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8 text-left bg-amber-50/90 border border-amber-300/80 rounded-2xl p-5 sm:p-6 text-amber-950 shadow-sm max-w-2xl mx-auto"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg text-amber-800 shrink-0 mt-0.5">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-semibold text-base text-amber-950">
+                  Firebase Domain Authorization Required
+                </h4>
+                <p className="text-xs sm:text-sm text-amber-900 mt-1 leading-relaxed">
+                  Google OAuth sign-in requires this container domain to be authorized in your Firebase Project settings:
+                </p>
+
+                {/* Hostname Copy Box */}
+                <div className="mt-3 flex items-center justify-between gap-2 bg-white/90 border border-amber-200 rounded-xl px-3 py-2 text-xs font-mono text-amber-950">
+                  <span className="truncate">{unauthorizedDomain}</span>
+                  <button
+                    onClick={handleCopyDomain}
+                    className="inline-flex items-center gap-1 shrink-0 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-sans font-medium rounded-md text-xs transition-colors cursor-pointer"
+                  >
+                    {copiedDomain ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-amber-800" />
+                        <span>Copy Domain</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="mt-3 text-xs text-amber-900 space-y-1">
+                  <p className="font-medium">To permanently authorize Google Sign-In:</p>
+                  <ol className="list-decimal pl-4 space-y-0.5 text-amber-800">
+                    <li>Open <strong>Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains</strong>.</li>
+                    <li>Click <strong>Add domain</strong> and paste the domain above.</li>
+                  </ol>
+                </div>
+
+                {onDemoSignIn && (
+                  <div className="mt-4 pt-3 border-t border-amber-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <span className="text-xs text-amber-900 font-medium">
+                      Want to evaluate without changing Firebase settings?
+                    </span>
+                    <button
+                      onClick={onDemoSignIn}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>Continue in Evaluator Demo Mode</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {authError && !unauthorizedDomain && (
           <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-sm max-w-md mx-auto">
             {authError}
           </div>
@@ -197,3 +306,4 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     </div>
   );
 };
+

@@ -83,7 +83,7 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({
       setUrl('');
       setIsAdding(false);
     } catch (err: unknown) {
-      console.error('Failed to save webhook:', err);
+      console.warn('Failed to save webhook notice:', err);
       setError((err as Error)?.message || 'Failed to save webhook configuration');
     } finally {
       setSaving(false);
@@ -98,7 +98,7 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({
       };
       await saveWebhookConfig(userId, updated);
     } catch (err) {
-      console.error('Failed to toggle webhook:', err);
+      console.warn('Failed to toggle webhook notice:', err);
     }
   };
 
@@ -113,7 +113,7 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({
         details: `Deleted webhook integration: "${whName}"`,
       });
     } catch (err) {
-      console.error('Failed to delete webhook:', err);
+      console.warn('Failed to delete webhook notice:', err);
     }
   };
 

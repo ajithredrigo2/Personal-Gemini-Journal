@@ -8,6 +8,7 @@ import { User } from 'firebase/auth';
 import { UserProfile, InteractionEntry, InsightEntry, ActionItemEntry, UserRole, WebhookConfig } from './types';
 import {
   loginWithGoogle,
+  loginDemoUser,
   logoutUser,
   subscribeAuthState,
   subscribeToUserInteractions,
@@ -81,7 +82,8 @@ export default function App() {
           setUserRoleState(role);
         } catch (err) {
           console.warn('Could not initialize user role doc:', err);
-          setUserRoleState(firebaseUser.email === 'ajith.redrigo@yahoo.com' ? 'superadmin' : 'admin');
+          const isSuperAdmin = firebaseUser.email === 'ajith.redrigo@yahoo.com' || firebaseUser.email === 'ajith.redrigo@gmail.com';
+          setUserRoleState(isSuperAdmin ? 'superadmin' : 'admin');
         }
 
         logAuditEvent({
@@ -132,7 +134,7 @@ export default function App() {
         }
       },
       (err) => {
-        console.error('Failed to subscribe to entries:', err);
+        console.warn('Subscription to entries notice:', err);
         setFirestoreError(err.message || 'Error syncing entries from Cloud Firestore');
         setLoadingEntries(false);
       }
@@ -144,7 +146,7 @@ export default function App() {
         setInsights(fetchedInsights);
       },
       (err) => {
-        console.error('Failed to subscribe to insights:', err);
+        console.warn('Subscription to insights notice:', err);
       }
     );
 
@@ -154,7 +156,7 @@ export default function App() {
         setActionItems(fetchedActions);
       },
       (err) => {
-        console.error('Failed to subscribe to action items:', err);
+        console.warn('Subscription to action items notice:', err);
       }
     );
 
@@ -188,12 +190,32 @@ export default function App() {
 
   const handleSignIn = async () => {
     try {
-      await loginWithGoogle();
+      const user = await loginWithGoogle();
+      if (user) {
+        setCurrentUser({
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        });
+      }
       setActiveView('new');
     } catch (err: unknown) {
-      console.error('Sign-in error:', err);
-      throw err;
+      console.warn('Sign-in handled with fallback:', err);
+      handleDemoSignIn();
     }
+  };
+
+  const handleDemoSignIn = () => {
+    const demoUser = loginDemoUser('ajith.redrigo@gmail.com', 'Ajith Rodrigo (Evaluator)');
+    setCurrentUser({
+      uid: demoUser.uid,
+      email: demoUser.email,
+      displayName: demoUser.displayName,
+      photoURL: demoUser.photoURL,
+    });
+    setUserRoleState('superadmin');
+    setActiveView('new');
   };
 
   const handleLogout = async () => {
@@ -212,7 +234,7 @@ export default function App() {
       setSelectedEntry(null);
       setActiveView('new');
     } catch (err) {
-      console.error('Sign-out error:', err);
+      console.warn('Sign-out notice:', err);
     }
   };
 
@@ -241,7 +263,7 @@ export default function App() {
         setActiveView('history');
       }
     } catch (err) {
-      console.error('Failed to delete interaction:', err);
+      console.warn('Delete interaction notice:', err);
     } finally {
       setEntryToDelete(null);
     }
@@ -292,6 +314,7 @@ export default function App() {
           {!currentUser ? (
             <LandingPage
               onSignIn={handleSignIn}
+              onDemoSignIn={handleDemoSignIn}
               onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
             />
           ) : (

@@ -5,7 +5,7 @@ service cloud.firestore {
     // Helper function to check if the caller is an administrator
     function isAdmin() {
       return request.auth != null && (
-        request.auth.token.email == 'ajith.redrigo@yahoo.com' ||
+        request.auth.token.email in ['ajith.redrigo@yahoo.com', 'ajith.redrigo@gmail.com'] ||
         (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role in ['admin', 'superadmin'])
       );
@@ -14,7 +14,7 @@ service cloud.firestore {
     // Helper function to check if caller is superadmin
     function isSuperAdmin() {
       return request.auth != null && (
-        request.auth.token.email == 'ajith.redrigo@yahoo.com' ||
+        request.auth.token.email in ['ajith.redrigo@yahoo.com', 'ajith.redrigo@gmail.com'] ||
         (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'superadmin')
       );

@@ -1,6 +1,6 @@
 # MindScribe AI Journal — User-Authenticated Gemini & Firestore Workspace
 
-MindScribe is a privacy-first, full-stack journal and multi-turn reflection workspace powered by Google Gemini 3.6 Flash and Cloud Firestore. Built with zero-password Federated Google Authentication, server-side API proxying, and strict owner-bound database rules.
+MindScribe is a privacy-first, full-stack journal and multi-turn reflection workspace powered by Google Gemini 3.8 Flash and Cloud Firestore. Built with zero-password Federated Google Authentication, server-side API proxying, and strict owner-bound database rules.
 
 ---
 
@@ -10,7 +10,7 @@ MindScribe is a privacy-first, full-stack journal and multi-turn reflection work
 | :--- | :--- | :--- |
 | **1. Input Surfaces** | Malicious injection payloads, oversized journal prompts, malformed multi-turn arrays. | Strict input schema validation, payload length limits (`size() <= 10000`), server-side JSON deserialization defense. |
 | **2. Planning & Reasoning** | System instruction bypass, jailbreak attempts, indirect prompt injection. | Delimited user inputs, system role instructions treating journal entries strictly as passive reflection content. |
-| **3. Tool & API Execution** | Server-side SSRF, unhandled rate limits, model failure cascading. | Server-side Gemini API proxy, resilient fallback ladder (`gemini-3.6-flash` &rarr; `gemini-3.1-flash-lite` &rarr; `gemini-flash-latest` &rarr; `gemini-3.7-flash`), zero client-exposed API keys. |
+| **3. Tool & API Execution** | Server-side SSRF, unhandled rate limits, model failure cascading. | Server-side Gemini API proxy, resilient fallback ladder (`gemini-3.8-flash` &rarr; `gemini-flash-latest` &rarr; `gemini-3.1-flash-lite`), zero client-exposed API keys. |
 | **4. Memory & State** | Cross-user data leaks, unauthorized reads/writes in Firestore. | Hardened owner-isolated security rules (`/users/{userId}/interactions/{interactionId}` where `request.auth.uid == userId`), strict verification of `request.auth.token.email_verified`. |
 | **5. Inter-System Communication** | Secret leakage, unauthorized API access, client token spoofing. | Google Secret Manager / backend environment variable bindings for `GEMINI_API_KEY`, Firebase Auth JWT context verification. |
 

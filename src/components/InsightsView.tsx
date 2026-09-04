@@ -175,7 +175,7 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
         }
       }
     } catch (err: unknown) {
-      console.error('Failed to generate insights:', err);
+      console.warn('Failed to generate insights notice:', err);
       setError((err as Error)?.message || 'Failed to generate reflection intelligence.');
     } finally {
       setIsGenerating(false);
@@ -199,7 +199,7 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
       await saveActionItem(userId, newAction);
       setNewActionTitle('');
     } catch (err) {
-      console.error('Failed to add action item:', err);
+      console.warn('Failed to add action item notice:', err);
       setError('Could not save action item.');
     }
   };

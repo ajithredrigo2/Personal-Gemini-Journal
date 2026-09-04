@@ -17,6 +17,7 @@ import {
   User as UserIcon,
   BellRing,
   Plus,
+  History,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -213,7 +214,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
         setTimeout(() => setWebhookStatus(null), 4000);
       }
     } catch (err: unknown) {
-      console.error('Firestore save failed:', err);
+      console.warn('Firestore save notice:', err);
       setSaveStatus('error');
     }
   };
@@ -292,7 +293,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
 
       await handlePersistToFirestore(entryPayload);
     } catch (err: unknown) {
-      console.error('Failed to communicate with Gemini:', err);
+      console.warn('Gemini communication notice:', err);
       setApiError((err as Error)?.message || 'Could not connect to Gemini AI.');
     } finally {
       setIsLoading(false);
@@ -359,20 +360,22 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
             <button
               id="start-fresh-reflection-btn"
               onClick={handleStartFresh}
-              className="inline-flex items-center gap-1.5 text-xs text-[#5A5A40] hover:text-[#3A3A35] bg-[#5A5A40]/10 hover:bg-[#5A5A40]/20 px-3 py-1.5 rounded-lg border border-[#5A5A40]/30 font-medium transition-colors cursor-pointer"
-              title="Clear current conversation and start a new blank reflection"
+              className="inline-flex items-center gap-1.5 text-xs text-[#5A5A40] hover:text-[#3A3A35] bg-[#5A5A40]/10 hover:bg-[#5A5A40]/20 px-3 py-1.5 rounded-lg border border-[#5A5A40]/30 font-medium transition-colors cursor-pointer whitespace-nowrap"
+              title="Clear current conversation and start a new reflection"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>New Blank Reflection</span>
+              <span>New Reflection</span>
             </button>
           )}
 
           <button
             id="view-all-entries-btn"
             onClick={onViewHistory}
-            className="text-xs text-[#3A3A35] hover:text-black bg-[#EFEEE7] hover:bg-[#E8E6DF] px-3 py-1.5 rounded-lg border border-[#D6D5CD] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 text-xs text-[#3A3A35] hover:text-black bg-[#EFEEE7] hover:bg-[#E8E6DF] px-3 py-1.5 rounded-lg border border-[#D6D5CD] font-medium transition-colors cursor-pointer whitespace-nowrap"
+            title="View reflection history"
           >
-            History &rarr;
+            <History className="w-3.5 h-3.5 text-[#5A5A40]" />
+            <span>History</span>
           </button>
         </div>
       </div>

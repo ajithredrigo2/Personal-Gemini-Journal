@@ -4,5 +4,20 @@
     "location": "asia-southeast1",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "auth": {
+    "authorizedDomains": [
+      "localhost",
+      "ais-dev-y3d3syyyybgt4pjgnocufc-716029739128.europe-west2.run.app",
+      "ais-pre-y3d3syyyybgt4pjgnocufc-716029739128.europe-west2.run.app"
+    ],
+    "providers": {
+      "anonymous": true,
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "MindScribe AI Journal",
+        "supportEmail": "ajith.redrigo@gmail.com"
+      }
+    }
   }
 }

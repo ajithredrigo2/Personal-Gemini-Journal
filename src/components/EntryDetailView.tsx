@@ -104,7 +104,7 @@ ${messages
       };
       onUpdateEntry(updated);
     } catch (err) {
-      console.error('Failed to remove location from entry:', err);
+      console.warn('Failed to remove location from entry notice:', err);
     } finally {
       setIsRemovingLocation(false);
     }
@@ -172,7 +172,7 @@ ${messages
       await saveInteraction(userId, updatedPayload);
       onUpdateEntry(updatedPayload);
     } catch (err: unknown) {
-      console.error('Follow-up generation failed:', err);
+      console.warn('Follow-up generation notice:', err);
       setApiError((err as Error)?.message || 'Failed to send follow-up.');
     } finally {
       setIsLoading(false);
@@ -189,7 +189,7 @@ ${messages
           className="inline-flex items-center gap-2 text-[#3A3A35] hover:text-black text-sm font-medium transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Past Entries</span>
+          <span>Back to History</span>
         </button>
 
         <div className="flex items-center gap-2 self-end sm:self-center">
