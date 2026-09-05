@@ -42,11 +42,8 @@ import {
 // firebase-applet-config.json.
 // ---------------------------------------------------------------------------
 
-const appletConfigs = import.meta.glob<{ default: Record<string, string> }>(
-  '/firebase-applet-config.json',
-  { eager: true }
-);
-const appletConfig = appletConfigs['/firebase-applet-config.json']?.default;
+import appletConfigRaw from '../firebase-applet-config.json';
+const appletConfig: Record<string, string> = (appletConfigRaw as any)?.default || appletConfigRaw;
 
 const firebaseConfig = {
   apiKey: appletConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || '',
