@@ -285,11 +285,26 @@ export function subscribeAuthState(callback: (user: User | null) => void): Unsub
 }
 
 export async function getCurrentUserToken(): Promise<string | null> {
-  if (auth && auth.currentUser) {
-    return auth.currentUser.getIdToken();
-  }
+  // If active in a demo session, always return the demo token
   if (demoAuthUser) {
     return 'demo-token-' + demoAuthUser.uid;
+  }
+  // Check localStorage if demo session was saved but not yet hydrated
+  try {
+    const savedDemo = typeof window !== 'undefined' ? localStorage.getItem('mindscribe_demo_user') : null;
+    if (savedDemo) {
+      const parsed = JSON.parse(savedDemo);
+      if (parsed?.uid) {
+        demoAuthUser = parsed;
+        return 'demo-token-' + parsed.uid;
+      }
+    }
+  } catch {
+    // localStorage unavailable
+  }
+
+  if (auth && auth.currentUser) {
+    return auth.currentUser.getIdToken();
   }
   return null;
 }

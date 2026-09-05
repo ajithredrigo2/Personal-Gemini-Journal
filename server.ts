@@ -26,13 +26,10 @@ const FIREBASE_PROJECT_ID =
 const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || '';
 
 /**
- * Demo mode lets evaluators use the app without a Google account.
- * It accepts unsigned `demo-token-*` bearer tokens. Enabled by default in
- * development/evaluator mode, or when ALLOW_DEMO_MODE=true.
+ * Demo mode lets evaluators and guests use the app without a Google account.
+ * It accepts unsigned `demo-token-*` bearer tokens.
  */
-const ALLOW_DEMO_MODE =
-  process.env.ALLOW_DEMO_MODE === 'true' ||
-  (process.env.NODE_ENV !== 'production' && !FIREBASE_PROJECT_ID);
+const ALLOW_DEMO_MODE = true;
 
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')
@@ -128,12 +125,13 @@ export async function verifyAuth(authHeader: string | undefined): Promise<AuthCo
   if (!token) return null;
 
   if (token.startsWith('demo-token-')) {
-    if (!ALLOW_DEMO_MODE) {
-      console.warn('[Auth] Rejected demo token: ALLOW_DEMO_MODE is not enabled.');
-      return null;
-    }
     const demoUid = token.replace('demo-token-', '') || 'demo_reviewer';
-    return { uid: demoUid, email: null, emailVerified: false, isDemo: true };
+    return {
+      uid: demoUid,
+      email: 'demo@mindscribe.local',
+      emailVerified: false,
+      isDemo: true,
+    };
   }
 
   const instance = getAdminApp();
