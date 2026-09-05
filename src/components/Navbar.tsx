@@ -12,6 +12,8 @@ import {
   Menu,
   X,
   ChevronRight,
+  UserPlus,
+  LogIn,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, UserRole } from '../types';
@@ -27,6 +29,8 @@ interface NavbarProps {
   onOpenWebhooks: () => void;
   onLogout: () => void;
   onOpenSecurityModal: () => void;
+  onOpenRegister?: () => void;
+  onOpenSignIn?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -40,6 +44,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWebhooks,
   onLogout,
   onOpenSecurityModal,
+  onOpenRegister,
+  onOpenSignIn,
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isAdmin = userRole === 'admin' || userRole === 'superadmin';
@@ -328,15 +334,37 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </>
           ) : (
-            <button
-              id="nav-security-info-btn"
-              onClick={onOpenSecurityModal}
-              className="h-8.5 inline-flex items-center gap-1.5 text-xs text-[#E8E6DF] hover:text-white bg-[#484842] px-2.5 sm:px-3 rounded-lg border border-[#5A5A53] transition-colors cursor-pointer whitespace-nowrap"
-            >
-              <ShieldCheck className="w-4 h-4 text-[#9AC29F] shrink-0" />
-              <span className="hidden sm:inline">Encrypted & User-Isolated</span>
-              <span className="sm:hidden">Encrypted</span>
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {onOpenRegister && (
+                <button
+                  id="nav-register-btn"
+                  onClick={onOpenRegister}
+                  className="h-8.5 inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-[#5A5A40] hover:bg-[#6D6D4E] px-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap shadow-2xs"
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-[#E8E6DF]" />
+                  <span>Register</span>
+                </button>
+              )}
+              {onOpenSignIn && (
+                <button
+                  id="nav-signin-btn"
+                  onClick={onOpenSignIn}
+                  className="h-8.5 inline-flex items-center gap-1.5 text-xs font-semibold text-[#F5F5F0] hover:text-white bg-[#484842] hover:bg-[#57574F] px-3 sm:px-3.5 rounded-lg border border-[#5C5C54] shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <LogIn className="w-3.5 h-3.5 text-[#D6D5CD]" />
+                  <span>Sign In</span>
+                </button>
+              )}
+              <button
+                id="nav-security-info-btn"
+                onClick={onOpenSecurityModal}
+                className="h-8.5 hidden sm:inline-flex items-center gap-1.5 text-xs text-[#E8E6DF] hover:text-white bg-[#484842] px-2.5 sm:px-3 rounded-lg border border-[#5A5A53] transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <ShieldCheck className="w-4 h-4 text-[#9AC29F] shrink-0" />
+                <span className="hidden md:inline">Encrypted &amp; User-Isolated</span>
+                <span className="md:hidden">Encrypted</span>
+              </button>
+            </div>
           )}
         </div>
       </header>

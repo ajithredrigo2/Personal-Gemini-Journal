@@ -30,6 +30,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { WebhookSettingsModal } from './components/WebhookSettingsModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { SecurityModal } from './components/SecurityBadge';
+import { AuthModal, AuthModalMode } from './components/AuthModal';
 import { APIProvider } from '@vis.gl/react-google-maps';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -54,7 +55,19 @@ export default function App() {
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('register');
   const [editorSessionKey, setEditorSessionKey] = useState<number>(() => Date.now());
+
+  const openRegisterModal = () => {
+    setAuthModalMode('register');
+    setIsAuthModalOpen(true);
+  };
+
+  const openSignInModal = () => {
+    setAuthModalMode('signin');
+    setIsAuthModalOpen(true);
+  };
 
   const handleStartNewReflection = () => {
     setSelectedEntry(null);
@@ -316,6 +329,8 @@ export default function App() {
           onOpenWebhooks={() => setIsWebhooksModalOpen(true)}
           onLogout={handleLogout}
           onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
+          onOpenRegister={openRegisterModal}
+          onOpenSignIn={openSignInModal}
         />
 
         <main className="flex-1">
@@ -324,6 +339,7 @@ export default function App() {
               onSignIn={handleSignIn}
               onDemoSignIn={handleDemoSignIn}
               onOpenSecurityModal={() => setIsSecurityModalOpen(true)}
+              onOpenRegister={openRegisterModal}
               authError={authError}
               onDismissAuthError={() => setAuthError(null)}
             />
@@ -425,6 +441,24 @@ export default function App() {
         <SecurityModal
           isOpen={isSecurityModalOpen}
           onClose={() => setIsSecurityModalOpen(false)}
+        />
+
+        {/* Authentication Modal (Register / Sign In / Password Reset) */}
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          initialMode={authModalMode}
+          onClose={() => setIsAuthModalOpen(false)}
+          onSuccess={(user) => {
+            setCurrentUser({
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName,
+              photoURL: user.photoURL,
+            });
+            setActiveView('new');
+          }}
+          onGoogleSignIn={handleSignIn}
+          onDemoSignIn={handleDemoSignIn}
         />
       </div>
     </APIProvider>

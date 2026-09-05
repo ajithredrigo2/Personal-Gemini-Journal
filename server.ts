@@ -126,9 +126,20 @@ export async function verifyAuth(authHeader: string | undefined): Promise<AuthCo
 
   if (token.startsWith('demo-token-')) {
     const demoUid = token.replace('demo-token-', '') || 'demo_reviewer';
+    let email = 'demo@mindscribe.local';
+    if (demoUid.startsWith('reg_')) {
+      // e.g. reg_jane_doe_gmail_com -> jane.doe@gmail.com
+      const stripped = demoUid.replace('reg_', '');
+      const lastUnderscore = stripped.lastIndexOf('_');
+      if (lastUnderscore > 0) {
+        email = stripped.substring(0, lastUnderscore) + '@' + stripped.substring(lastUnderscore + 1);
+      } else {
+        email = `${stripped}@local`;
+      }
+    }
     return {
       uid: demoUid,
-      email: 'demo@mindscribe.local',
+      email,
       emailVerified: false,
       isDemo: true,
     };

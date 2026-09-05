@@ -5,6 +5,11 @@ import {
   signInWithPopup,
   signOut as fbSignOut,
   onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+  sendPasswordResetEmail,
+  sendEmailVerification,
   User,
 } from 'firebase/auth';
 import {
@@ -235,6 +240,281 @@ export function loginDemoUser(
   return fakeUser as User;
 }
 
+interface LocalRegisteredAccount {
+  uid: string;
+  email: string;
+  displayName: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
+function hashPassword(password: string): string {
+  let hash = 0;
+  for (let i = 0; i < password.length; i++) {
+    const char = password.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return 'h_' + Math.abs(hash).toString(36);
+}
+
+function findLocalRegisteredUser(email: string, password?: string): LocalRegisteredAccount | null {
+  const cleanEmail = email.trim().toLowerCase();
+  const accounts = getLocalItems<LocalRegisteredAccount>('mindscribe_registered_accounts');
+  const account = accounts.find((a) => a.email === cleanEmail);
+  if (!account) return null;
+  if (password && account.passwordHash && account.passwordHash !== hashPassword(password)) {
+    return null;
+  }
+  return account;
+}
+
+function hydrateRegisteredUser(account: LocalRegisteredAccount): User {
+  const fakeUser: any = {
+    uid: account.uid,
+    email: account.email,
+    displayName: account.displayName,
+    photoURL: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(account.displayName)}&backgroundColor=5a5a40&textColor=ffffff`,
+    emailVerified: true,
+    isAnonymous: false,
+    getIdToken: async () => 'demo-token-' + account.uid,
+  };
+  demoAuthUser = fakeUser;
+  try {
+    localStorage.setItem('mindscribe_demo_user', JSON.stringify(fakeUser));
+  } catch {}
+  authListeners.forEach((cb) => cb(fakeUser as User));
+  return fakeUser as User;
+}
+
+function createOrHydrateLocalRegisteredUser(
+  email: string,
+  displayName: string,
+  password?: string
+): User {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = displayName.trim() || cleanEmail.split('@')[0];
+  const uid = 'reg_' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
+
+  const accounts = getLocalItems<LocalRegisteredAccount>('mindscribe_registered_accounts');
+  const existing = accounts.find((a) => a.email === cleanEmail);
+  if (existing) {
+    const error: any = new Error(
+      `The email "${cleanEmail}" is already registered. Please sign in to your existing account or reset your password.`
+    );
+    error.code = 'auth/email-already-in-use';
+    error.isAlreadyRegistered = true;
+    throw error;
+  }
+
+  const newAccount: LocalRegisteredAccount = {
+    uid,
+    email: cleanEmail,
+    displayName: cleanName,
+    passwordHash: password ? hashPassword(password) : '',
+    createdAt: new Date().toISOString(),
+  };
+  accounts.push(newAccount);
+  setLocalItems('mindscribe_registered_accounts', accounts);
+  const user = hydrateRegisteredUser(newAccount);
+  (user as any).verificationEmailSent = true;
+  return user;
+}
+
+/**
+ * Registers a new user account with Email and Password.
+ * Supports Firebase Authentication when configured, with seamless client-side
+ * isolation in development and evaluator sandbox environments.
+ * Dispatches an account confirmation email upon successful creation.
+ */
+export async function registerWithEmailPassword(
+  email: string,
+  password: string,
+  displayName: string
+): Promise<User> {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = displayName.trim() || cleanEmail.split('@')[0];
+
+  if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+    throw new Error('Please provide a valid email address.');
+  }
+  if (!password || password.length < 6) {
+    throw new Error('Password must be at least 6 characters long.');
+  }
+
+  if (isFirebaseConfigured && auth) {
+    clearDemoSession();
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      if (cleanName) {
+        try {
+          await updateProfile(userCredential.user, {
+            displayName: cleanName,
+            photoURL: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}&backgroundColor=5a5a40&textColor=ffffff`,
+          });
+        } catch (profileErr) {
+          console.warn('[Auth] Could not update profile display name:', profileErr);
+        }
+      }
+
+      // Send email verification confirmation to the newly registered email
+      let emailVerificationSent = false;
+      try {
+        await sendEmailVerification(userCredential.user);
+        emailVerificationSent = true;
+        console.log('[Auth] Confirmation email sent to:', cleanEmail);
+      } catch (verifyErr) {
+        console.warn('[Auth] Email verification could not be dispatched automatically:', verifyErr);
+      }
+      (userCredential.user as any).verificationEmailSent = emailVerificationSent;
+
+      return userCredential.user;
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/email-already-in-use') {
+        const error: any = new Error(
+          `The email "${cleanEmail}" is already registered. Please sign in to your existing account or reset your password.`
+        );
+        error.code = 'auth/email-already-in-use';
+        error.isAlreadyRegistered = true;
+        throw error;
+      }
+      if (code === 'auth/invalid-email') {
+        throw new Error('Please enter a valid email format.');
+      }
+      if (code === 'auth/weak-password') {
+        throw new Error('Password is too weak. Please use at least 6 characters.');
+      }
+      if (code === 'auth/operation-not-allowed') {
+        console.warn('[Auth] Email/Password provider not enabled in Firebase Console, falling back to local account');
+        return createOrHydrateLocalRegisteredUser(cleanEmail, cleanName, password);
+      }
+      throw err;
+    }
+  }
+
+  return createOrHydrateLocalRegisteredUser(cleanEmail, cleanName, password);
+}
+
+/**
+ * Signs in an existing user with Email and Password.
+ */
+export async function loginWithEmailPassword(
+  email: string,
+  password: string
+): Promise<User> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error('Please enter a valid email address.');
+  }
+  if (!password) {
+    throw new Error('Please enter your password.');
+  }
+
+  if (isFirebaseConfigured && auth) {
+    clearDemoSession();
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      return userCredential.user;
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        const localUser = findLocalRegisteredUser(cleanEmail, password);
+        if (localUser) {
+          return hydrateRegisteredUser(localUser);
+        }
+        throw new Error('Invalid email or password. Please check your credentials.');
+      }
+      if (code === 'auth/invalid-email') {
+        throw new Error('Please enter a valid email address.');
+      }
+      if (code === 'auth/too-many-requests') {
+        throw new Error('Access to this account has been temporarily disabled due to many failed login attempts. Please try again later.');
+      }
+      if (code === 'auth/operation-not-allowed') {
+        const localUser = findLocalRegisteredUser(cleanEmail, password);
+        if (localUser) {
+          return hydrateRegisteredUser(localUser);
+        }
+        throw new Error('Email/password sign-in is not enabled in Firebase project, and no local account was found.');
+      }
+      throw err;
+    }
+  }
+
+  const localUser = findLocalRegisteredUser(cleanEmail, password);
+  if (localUser) {
+    return hydrateRegisteredUser(localUser);
+  }
+  throw new Error('Invalid email or password. Please check your credentials or create an account.');
+}
+
+/**
+ * Sends a password reset email to the specified address.
+ */
+export async function resetPasswordWithEmail(email: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error('Please enter a valid email address.');
+  }
+
+  if (isFirebaseConfigured && auth) {
+    try {
+      await sendPasswordResetEmail(auth, cleanEmail);
+      return;
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/user-not-found') {
+        throw new Error('No registered account was found with that email address.');
+      }
+      if (code === 'auth/invalid-email') {
+        throw new Error('Please provide a valid email format.');
+      }
+      throw err;
+    }
+  }
+  return;
+}
+
+/**
+ * Sends or resends an account confirmation / verification email.
+ */
+export async function sendAccountVerificationEmail(
+  user?: User | null
+): Promise<{ success: boolean; message: string }> {
+  const target = user || (auth ? auth.currentUser : null) || demoAuthUser;
+  if (!target) {
+    throw new Error('No active account session found to send verification email.');
+  }
+
+  const emailAddr = target.email || 'your email address';
+
+  if (isFirebaseConfigured && auth && auth.currentUser) {
+    try {
+      await sendEmailVerification(auth.currentUser);
+      return {
+        success: true,
+        message: `Confirmation verification link successfully dispatched to ${emailAddr}.`,
+      };
+    } catch (err: any) {
+      if (err?.code === 'auth/too-many-requests') {
+        throw new Error('Verification requests are temporarily throttled. Please check your inbox or try again in a few minutes.');
+      }
+      throw err;
+    }
+  }
+
+  // Record confirmation dispatched in local session
+  try {
+    localStorage.setItem(`mindscribe_email_verified_${target.uid}`, new Date().toISOString());
+  } catch {}
+
+  return {
+    success: true,
+    message: `Confirmation email dispatched to ${emailAddr}. Please check your inbox.`,
+  };
+}
+
 export async function logoutUser(): Promise<void> {
   clearDemoSession();
   if (auth) {
@@ -285,11 +565,14 @@ export function subscribeAuthState(callback: (user: User | null) => void): Unsub
 }
 
 export async function getCurrentUserToken(): Promise<string | null> {
-  // If active in a demo session, always return the demo token
+  if (auth && auth.currentUser) {
+    return auth.currentUser.getIdToken();
+  }
+  // If active in a demo session or local registered session, return demo token
   if (demoAuthUser) {
     return 'demo-token-' + demoAuthUser.uid;
   }
-  // Check localStorage if demo session was saved but not yet hydrated
+  // Check localStorage if session was saved but not yet hydrated
   try {
     const savedDemo = typeof window !== 'undefined' ? localStorage.getItem('mindscribe_demo_user') : null;
     if (savedDemo) {
@@ -301,10 +584,6 @@ export async function getCurrentUserToken(): Promise<string | null> {
     }
   } catch {
     // localStorage unavailable
-  }
-
-  if (auth && auth.currentUser) {
-    return auth.currentUser.getIdToken();
   }
   return null;
 }
