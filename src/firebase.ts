@@ -33,38 +33,63 @@ import {
 // ---------------------------------------------------------------------------
 // Firebase client configuration
 //
-// Read from Vite build-time env vars (VITE_FIREBASE_*) so no secret-bearing
-// JSON file needs to be committed or COPY'd into the Docker image. See
-// .env.example for the full list.
+// Read from Vite build-time env vars (VITE_FIREBASE_*) or optional
+// firebase-applet-config.json.
 // ---------------------------------------------------------------------------
 
+const appletConfigs = import.meta.glob<{ default: Record<string, string> }>(
+  '/firebase-applet-config.json',
+  { eager: true }
+);
+const appletConfig = appletConfigs['/firebase-applet-config.json']?.default;
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  apiKey: appletConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: appletConfig?.authDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: appletConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: appletConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId:
+    appletConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: appletConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
-const FIRESTORE_DATABASE_ID = import.meta.env.VITE_FIRESTORE_DATABASE_ID || '';
+const FIRESTORE_DATABASE_ID =
+  appletConfig?.firestoreDatabaseId || import.meta.env.VITE_FIRESTORE_DATABASE_ID || '';
 
-export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+    firebaseConfig.apiKey.trim().length > 5 &&
+    firebaseConfig.projectId &&
+    firebaseConfig.projectId.trim().length > 0 &&
+    !firebaseConfig.apiKey.includes('placeholder')
+);
 
-if (!isFirebaseConfigured) {
-  console.error(
-    '[Firebase] Client configuration is missing. Set VITE_FIREBASE_API_KEY, ' +
-      'VITE_FIREBASE_AUTH_DOMAIN and VITE_FIREBASE_PROJECT_ID at build time.'
+// Initialize Firebase App singleton safely without throwing on missing/invalid credentials
+let app: any = null;
+let auth: any = null;
+let db: any = null;
+
+if (isFirebaseConfigured) {
+  try {
+    app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    auth = getAuth(app);
+    db = FIRESTORE_DATABASE_ID
+      ? getFirestore(app, FIRESTORE_DATABASE_ID)
+      : getFirestore(app);
+    console.info('[Firebase] Client initialized successfully for project:', firebaseConfig.projectId);
+  } catch (err) {
+    console.warn('[Firebase] Client initialization error:', err);
+    app = null;
+    auth = null;
+    db = null;
+  }
+} else {
+  console.info(
+    '[Firebase] Client credentials not provided. Running in guest/demo mode.'
   );
 }
 
-// Initialize Firebase App singleton
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const auth = getAuth(app);
-
-export const db = FIRESTORE_DATABASE_ID
-  ? getFirestore(app, FIRESTORE_DATABASE_ID)
-  : getFirestore(app);
+export { app, auth, db };
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
@@ -137,9 +162,9 @@ export class UnauthorizedDomainError extends Error {
  * sign-in) can be shown to the user. Demo mode is an explicit, separate action.
  */
 export async function loginWithGoogle(): Promise<User> {
-  if (!isFirebaseConfigured) {
+  if (!isFirebaseConfigured || !auth) {
     throw new Error(
-      'Firebase is not configured in this build. Set the VITE_FIREBASE_* environment variables and rebuild.'
+      'Firebase Authentication is not configured yet. Please provide Firebase credentials or use "Continue as Guest (Demo)" to explore the app.'
     );
   }
 
@@ -212,10 +237,12 @@ export function loginDemoUser(
 
 export async function logoutUser(): Promise<void> {
   clearDemoSession();
-  try {
-    await fbSignOut(auth);
-  } catch (err) {
-    console.warn('Signout error:', err);
+  if (auth) {
+    try {
+      await fbSignOut(auth);
+    } catch (err) {
+      console.warn('Signout error:', err);
+    }
   }
   authListeners.forEach((cb) => cb(null));
 }
@@ -226,17 +253,30 @@ export function subscribeAuthState(callback: (user: User | null) => void): Unsub
     callback(demoAuthUser as User);
   }
 
-  const fbUnsub = onAuthStateChanged(auth, (firebaseUser) => {
-    if (firebaseUser) {
-      // A real Firebase session always takes precedence over a stale demo one.
-      if (demoAuthUser) clearDemoSession();
-      callback(firebaseUser);
-      return;
+  let fbUnsub: Unsubscribe = () => {};
+  if (auth) {
+    try {
+      fbUnsub = onAuthStateChanged(auth, (firebaseUser) => {
+        if (firebaseUser) {
+          // A real Firebase session always takes precedence over a stale demo one.
+          if (demoAuthUser) clearDemoSession();
+          callback(firebaseUser);
+          return;
+        }
+        if (!demoAuthUser) {
+          callback(null);
+        }
+      });
+    } catch (err) {
+      console.warn('[Auth] onAuthStateChanged error:', err);
+      if (!demoAuthUser) {
+        callback(null);
+      }
     }
-    if (!demoAuthUser) {
-      callback(null);
-    }
-  });
+  } else if (!demoAuthUser) {
+    // If Firebase Auth is not active and no demo session exists, signal null immediately so loading finishes
+    callback(null);
+  }
 
   return () => {
     authListeners.delete(callback);
@@ -245,7 +285,7 @@ export function subscribeAuthState(callback: (user: User | null) => void): Unsub
 }
 
 export async function getCurrentUserToken(): Promise<string | null> {
-  if (auth.currentUser) {
+  if (auth && auth.currentUser) {
     return auth.currentUser.getIdToken();
   }
   if (demoAuthUser) {
@@ -279,7 +319,7 @@ export async function saveInteraction(userId: string, entry: InteractionEntry): 
   const sanitized = sanitizePayload(entry);
   const key = `mindscribe_interactions_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<InteractionEntry>(key);
     const idx = items.findIndex((i) => i.id === entry.id);
     if (idx >= 0) items[idx] = sanitized;
@@ -306,7 +346,7 @@ export async function deleteInteraction(userId: string, interactionId: string): 
 
   const key = `mindscribe_interactions_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<InteractionEntry>(key).filter((i) => i.id !== interactionId);
     setLocalItems(key, items);
     return;
@@ -331,7 +371,7 @@ export async function updateEntryLocation(
 
   const key = `mindscribe_interactions_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<InteractionEntry>(key);
     const item = items.find((i) => i.id === interactionId);
     if (item) {
@@ -376,7 +416,7 @@ export function subscribeToUserInteractions(
 
   const key = `mindscribe_interactions_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const cached = getLocalItems<InteractionEntry>(key);
     // Seed initial demo reflection if entirely empty
     if (cached.length === 0) {
@@ -455,6 +495,9 @@ export function subscribeToUserInteractions(
 
 export async function fetchUserInteractions(userId: string): Promise<InteractionEntry[]> {
   if (!userId) return [];
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
+    return getLocalItems<InteractionEntry>(`mindscribe_interactions_${userId}`);
+  }
   const userInteractionsCol = collection(db, 'users', userId, 'interactions');
   const q = query(userInteractionsCol, orderBy('updatedAt', 'desc'));
   const snapshot = await getDocs(q);
@@ -479,7 +522,7 @@ export async function saveInsight(userId: string, insight: InsightEntry): Promis
   const sanitized = sanitizePayload(insight);
   const key = `mindscribe_insights_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<InsightEntry>(key);
     const idx = items.findIndex((i) => i.id === insight.id);
     if (idx >= 0) items[idx] = sanitized;
@@ -506,7 +549,7 @@ export async function deleteInsight(userId: string, insightId: string): Promise<
 
   const key = `mindscribe_insights_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<InsightEntry>(key).filter((i) => i.id !== insightId);
     setLocalItems(key, items);
     return;
@@ -534,7 +577,7 @@ export function subscribeToUserInsights(
 
   const key = `mindscribe_insights_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     onUpdate(getLocalItems<InsightEntry>(key));
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -583,7 +626,7 @@ export async function saveActionItem(userId: string, item: ActionItemEntry): Pro
   const sanitized = sanitizePayload(item);
   const key = `mindscribe_action_items_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<ActionItemEntry>(key);
     const idx = items.findIndex((i) => i.id === item.id);
     if (idx >= 0) items[idx] = sanitized;
@@ -610,7 +653,7 @@ export async function deleteActionItem(userId: string, actionItemId: string): Pr
 
   const key = `mindscribe_action_items_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<ActionItemEntry>(key).filter((i) => i.id !== actionItemId);
     setLocalItems(key, items);
     return;
@@ -637,7 +680,7 @@ export async function toggleActionItemStatus(
 
   const key = `mindscribe_action_items_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<ActionItemEntry>(key);
     const item = items.find((i) => i.id === actionItemId);
     if (item) {
@@ -682,7 +725,7 @@ export function subscribeToUserActionItems(
 
   const key = `mindscribe_action_items_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     onUpdate(getLocalItems<ActionItemEntry>(key));
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -734,7 +777,7 @@ export async function initializeUserRole(
   // writing /roles/{uid}, which the security rules restrict to admins.
   const defaultRole: UserRole = isDemoUserId(userId) ? 'superadmin' : 'member';
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const key = `mindscribe_roles_${userId}`;
     const cachedRole = localStorage.getItem(key) as UserRole;
     if (cachedRole) return cachedRole;
@@ -768,7 +811,7 @@ export async function initializeUserRole(
 
 export async function getUserRole(userId: string): Promise<UserRole> {
   if (!userId) return 'member';
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const key = `mindscribe_roles_${userId}`;
     return (localStorage.getItem(key) as UserRole) || 'superadmin';
   }
@@ -792,7 +835,7 @@ export async function setUserRole(
 ): Promise<void> {
   if (!userId) throw new Error('User ID is required');
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const key = `mindscribe_roles_${userId}`;
     localStorage.setItem(key, role);
     window.dispatchEvent(new CustomEvent('mindscribe_role_change', { detail: { userId, role } }));
@@ -820,7 +863,7 @@ export function subscribeToUserRole(
     return () => {};
   }
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const key = `mindscribe_roles_${userId}`;
     const initial = (localStorage.getItem(key) as UserRole) || 'superadmin';
     onUpdate(initial);
@@ -858,6 +901,11 @@ export function subscribeToAllUserRoles(
   onUpdate: (roles: UserRoleDocument[]) => void,
   onError: (error: Error) => void
 ): Unsubscribe {
+  if (!isFirebaseConfigured || !db) {
+    onUpdate([]);
+    return () => {};
+  }
+
   const rolesCol = collection(db, 'roles');
   return onSnapshot(
     rolesCol,
@@ -888,7 +936,7 @@ export async function saveWebhookConfig(userId: string, config: WebhookConfig): 
   const key = `mindscribe_webhooks_${userId}`;
   const sanitized = sanitizePayload(config);
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<WebhookConfig>(key);
     const idx = items.findIndex((i) => i.id === config.id);
     if (idx >= 0) items[idx] = sanitized;
@@ -915,7 +963,7 @@ export async function deleteWebhookConfig(userId: string, webhookId: string): Pr
 
   const key = `mindscribe_webhooks_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     const items = getLocalItems<WebhookConfig>(key).filter((i) => i.id !== webhookId);
     setLocalItems(key, items);
     return;
@@ -943,7 +991,7 @@ export function subscribeToUserWebhooks(
 
   const key = `mindscribe_webhooks_${userId}`;
 
-  if (isDemoUserId(userId)) {
+  if (isDemoUserId(userId) || !isFirebaseConfigured || !db) {
     onUpdate(getLocalItems<WebhookConfig>(key));
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -996,11 +1044,13 @@ export async function logAuditEvent(
   if (localLogs.length > 50) localLogs.pop();
   setLocalItems(key, localLogs);
 
-  try {
-    const logDocRef = doc(db, 'audit_logs', logId);
-    await setDoc(logDocRef, sanitizePayload(payload));
-  } catch (err) {
-    console.warn('Could not write audit log to firestore (saved locally):', err);
+  if (isFirebaseConfigured && db) {
+    try {
+      const logDocRef = doc(db, 'audit_logs', logId);
+      await setDoc(logDocRef, sanitizePayload(payload));
+    } catch (err) {
+      console.warn('Could not write audit log to firestore (saved locally):', err);
+    }
   }
 }
 
@@ -1009,6 +1059,20 @@ export function subscribeToAuditLogs(
   onError: (error: Error) => void
 ): Unsubscribe {
   const key = 'mindscribe_audit_logs';
+
+  if (!isFirebaseConfigured || !db) {
+    onUpdate(getLocalItems<AuditLogEntry>(key));
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail || customEvent.detail.key === key) {
+        onUpdate(getLocalItems<AuditLogEntry>(key));
+      }
+    };
+    window.addEventListener('mindscribe_storage_change', handler);
+    return () => {
+      window.removeEventListener('mindscribe_storage_change', handler);
+    };
+  }
 
   const auditCol = collection(db, 'audit_logs');
   const q = query(auditCol, orderBy('timestamp', 'desc'));

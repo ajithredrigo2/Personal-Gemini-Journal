@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ArrowLeft,
   Sparkles,
@@ -58,6 +58,18 @@ export const EntryDetailView: React.FC<EntryDetailViewProps> = ({
   const [keyInsights, setKeyInsights] = useState<string[]>(entry.keyInsights || []);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [isRemovingLocation, setIsRemovingLocation] = useState(false);
+
+  const detailLoaderRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to reflection loader so follow-ups are never hidden below the screen fold
+  useEffect(() => {
+    if (isLoading) {
+      const timer = setTimeout(() => {
+        detailLoaderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
 
   const ModeIcon = MODE_ICON_MAP[entry.mode] || Sparkles;
 
@@ -212,6 +224,28 @@ ${messages
         </div>
       </div>
 
+      {/* Sticky Floating Reflection Loader Capsule (Always in convenient view) */}
+      {isLoading && (
+        <div
+          id="sticky-detail-reflection-loader"
+          role="status"
+          aria-live="polite"
+          onClick={() => {
+            detailLoaderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }}
+          className="sticky top-20 z-30 mx-auto my-3 w-fit flex items-center gap-2.5 px-4 py-2 bg-[#3A3A35] text-[#F5F5F0] border border-[#5A5A40] rounded-full shadow-lg backdrop-blur-md cursor-pointer hover:bg-[#484842] transition-all transform hover:scale-102 animate-in fade-in slide-in-from-top-2 duration-200"
+          title="Click to jump directly to active reflection"
+        >
+          <div className="w-4 h-4 border-2 border-[#9AC29F] border-t-transparent rounded-full animate-spin shrink-0" />
+          <span className="text-xs font-medium text-[#E8E6DF]">
+            Gemini is reflecting on your follow-up...
+          </span>
+          <span className="text-[10px] bg-[#5A5A40] text-[#F5F5F0] px-2 py-0.5 rounded-full font-mono font-medium">
+            Thinking
+          </span>
+        </div>
+      )}
+
       {/* Entry Header Info */}
       <div className="mt-6">
         <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -365,7 +399,7 @@ ${messages
               >
                 <div className="flex items-center justify-between gap-4 mb-2 pb-1.5 border-b border-[#D6D5CD]/50 text-xs">
                   <span className={`font-semibold ${isUser ? 'text-[#B5B4AC]' : 'text-[#73726B]'}`}>
-                    {isUser ? 'You' : 'Gemini 3.6 Flash'}
+                    {isUser ? 'You' : 'Gemini Reflection Engine'}
                   </span>
                   <span className={`text-[11px] ${isUser ? 'text-[#B5B4AC]' : 'text-[#73726B]'}`}>
                     {new Date(msg.timestamp).toLocaleTimeString([], {
@@ -384,6 +418,44 @@ ${messages
             </div>
           );
         })}
+
+        {/* In-Thread Reflection Loader Bubble (Prominently placed right under the user's latest follow-up) */}
+        {isLoading && (
+          <div
+            ref={detailLoaderRef}
+            id="detail-in-thread-reflection-loader"
+            role="status"
+            aria-live="polite"
+            className="flex items-start gap-3.5 flex-row pt-1 animate-in fade-in duration-300"
+          >
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-[#5A5A40]/15 text-[#5A5A40] border border-[#5A5A40]/30 animate-pulse">
+              <Sparkles className="w-4 h-4 text-[#5A5A40] animate-spin" style={{ animationDuration: '3s' }} />
+            </div>
+
+            <div className="max-w-[85%] rounded-2xl px-5 py-4 bg-white border border-[#5A5A40]/40 text-[#3A3A35] shadow-md">
+              <div className="flex items-center justify-between gap-4 mb-2.5 pb-1.5 border-b border-[#D6D5CD]/60 text-xs">
+                <span className="font-semibold text-[#5A5A40] flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-ping" />
+                  Gemini Reflection Engine
+                </span>
+                <span className="text-[11px] text-[#73726B] font-mono">Thinking...</span>
+              </div>
+
+              <div className="space-y-2 py-1">
+                <div className="flex items-center gap-2.5 text-sm text-[#5A5A40] font-medium">
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <span className="text-xs sm:text-sm text-[#3A3A35] font-serif italic">
+                    Deepening reflection & synthesizing perspectives...
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Error Message */}
@@ -400,19 +472,38 @@ ${messages
       {/* Multi-turn Continuation Box */}
       <form onSubmit={handleSendFollowUp} className="mt-8">
         <div className="bg-white border-2 border-[#D6D5CD] focus-within:border-[#5A5A40] rounded-2xl shadow-xs overflow-hidden transition-all">
+          {/* In-Composer Active Reflection Status Bar */}
+          {isLoading && (
+            <div
+              id="detail-composer-reflection-bar"
+              className="flex items-center justify-between px-4 py-2 bg-[#5A5A40]/10 border-b border-[#5A5A40]/25 text-xs text-[#5A5A40] font-medium animate-in fade-in"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-3.5 h-3.5 border-2 border-[#5A5A40] border-t-transparent rounded-full animate-spin shrink-0" />
+                <span className="font-semibold">Gemini is reflecting on your follow-up...</span>
+              </div>
+              <span className="text-[11px] text-[#73726B] font-sans hidden sm:inline">Please wait a moment</span>
+            </div>
+          )}
+
           <textarea
             id="detail-followup-textarea"
             rows={3}
             value={currentInput}
+            disabled={isLoading}
             onChange={(e) => setCurrentInput(e.target.value)}
-            placeholder="Continue the reflection or explore a deeper angle with Gemini... (Ctrl+Enter to send)"
+            placeholder={
+              isLoading
+                ? 'Gemini is reflecting on your follow-up... your response will appear in a moment.'
+                : 'Continue the reflection or explore a deeper angle with Gemini... (Ctrl+Enter to send)'
+            }
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 handleSendFollowUp(e);
               }
             }}
-            className="w-full p-4 text-[#3A3A35] placeholder:text-[#B5B4AC] focus:outline-none resize-y text-sm font-sans"
+            className="w-full p-4 text-[#3A3A35] placeholder:text-[#B5B4AC] focus:outline-none resize-y text-sm font-sans disabled:bg-[#FAF9F5] disabled:cursor-not-allowed"
           />
 
           <div className="flex items-center justify-between px-4 py-2.5 bg-[#F5F5F0] border-t border-[#D6D5CD]">

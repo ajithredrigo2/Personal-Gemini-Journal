@@ -93,9 +93,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     // Fetch live platform metrics from backend API
     authedFetch('/api/admin/metrics')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data: PlatformMetrics) => {
-        setMetrics(data);
+        if (data && typeof data.totalReflections === 'number') {
+          setMetrics(data);
+        }
         setLoadingMetrics(false);
       })
       .catch((err) => {
@@ -235,11 +240,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* Tab Navigation */}
-          <div className="flex items-center gap-2 pt-2 border-t border-[#44443E]">
+          <div className="flex items-center gap-2 pt-2 border-t border-[#44443E] overflow-x-auto pb-1">
             <button
               id="admin-tab-analytics-btn"
               onClick={() => setActiveTab('analytics')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === 'analytics'
                   ? 'bg-[#5A5A40] text-white font-semibold'
                   : 'bg-[#2A2A26] text-[#B5B4AC] hover:text-[#E8E6DF] hover:bg-[#383833]'
@@ -252,7 +257,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <button
               id="admin-tab-rbac-btn"
               onClick={() => setActiveTab('rbac')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === 'rbac'
                   ? 'bg-[#5A5A40] text-white font-semibold'
                   : 'bg-[#2A2A26] text-[#B5B4AC] hover:text-[#E8E6DF] hover:bg-[#383833]'
@@ -265,7 +270,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <button
               id="admin-tab-audit-btn"
               onClick={() => setActiveTab('audit')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === 'audit'
                   ? 'bg-[#5A5A40] text-white font-semibold'
                   : 'bg-[#2A2A26] text-[#B5B4AC] hover:text-[#E8E6DF] hover:bg-[#383833]'

@@ -295,7 +295,7 @@ export default function App() {
 
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY} libraries={['places', 'marker']}>
-      <div className="min-h-screen bg-[#F5F5F0] text-[#3A3A35] flex flex-col font-sans">
+      <div className="min-h-screen w-full overflow-x-hidden bg-[#F5F5F0] text-[#3A3A35] flex flex-col font-sans">
         <Navbar
           user={currentUser}
           userRole={userRole}

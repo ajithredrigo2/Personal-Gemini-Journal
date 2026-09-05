@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Sparkles,
   Send,
@@ -18,6 +18,7 @@ import {
   BellRing,
   Plus,
   History,
+  Loader2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -118,6 +119,18 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSavedEntry, setLastSavedEntry] = useState<InteractionEntry | null>(null);
   const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
+
+  const reflectionLoaderRef = useRef<HTMLDivElement>(null);
+
+  // Keep reflection loader in a convenient, visible place by auto-scrolling on submission
+  useEffect(() => {
+    if (isLoading) {
+      const timer = setTimeout(() => {
+        reflectionLoaderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
 
   const handleStartFresh = () => {
     if (onStartNewReflection) {
@@ -391,6 +404,28 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
         </div>
       </div>
 
+      {/* Sticky Floating Reflection Loader Pill (Guaranteed visible in viewport regardless of scroll position) */}
+      {isLoading && (
+        <div
+          id="sticky-reflection-loader"
+          role="status"
+          aria-live="polite"
+          onClick={() => {
+            reflectionLoaderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }}
+          className="sticky top-20 z-30 mx-auto my-3 w-fit flex items-center gap-2.5 px-4 py-2 bg-[#3A3A35] text-[#F5F5F0] border border-[#5A5A40] rounded-full shadow-lg backdrop-blur-md cursor-pointer hover:bg-[#484842] transition-all transform hover:scale-102 animate-in fade-in slide-in-from-top-2 duration-200"
+          title="Click to jump directly to the reflection in progress"
+        >
+          <div className="w-4 h-4 border-2 border-[#9AC29F] border-t-transparent rounded-full animate-spin shrink-0" />
+          <span className="text-xs font-medium text-[#E8E6DF]">
+            Gemini is reflecting on your entry...
+          </span>
+          <span className="text-[10px] bg-[#5A5A40] text-[#F5F5F0] px-2 py-0.5 rounded-full font-mono font-medium">
+            In progress
+          </span>
+        </div>
+      )}
+
       {/* Editor Controls: Title, Mode, Mood */}
       <div className="mt-6 space-y-6">
         {/* Title & Mood Selection */}
@@ -499,7 +534,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
                   >
                     <div className="flex items-center justify-between gap-4 mb-2 pb-1.5 border-b border-[#D6D5CD]/50 text-xs">
                       <span className={`font-semibold ${isUser ? 'text-[#B5B4AC]' : 'text-[#73726B]'}`}>
-                        {isUser ? 'You' : 'Gemini 3.6 Flash'}
+                        {isUser ? 'You' : 'Gemini Reflection Engine'}
                       </span>
                       <span className={`text-[11px] ${isUser ? 'text-[#B5B4AC]' : 'text-[#73726B]'}`}>
                         {new Date(msg.timestamp).toLocaleTimeString([], {
@@ -518,6 +553,47 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
                 </div>
               );
             })}
+
+            {/* In-Thread Reflection Loader Bubble (Prominently placed right under user input) */}
+            {isLoading && (
+              <div
+                ref={reflectionLoaderRef}
+                id="in-thread-reflection-loader"
+                role="status"
+                aria-live="polite"
+                className="flex items-start gap-3.5 flex-row pt-1 animate-in fade-in duration-300"
+              >
+                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-[#5A5A40]/15 text-[#5A5A40] border border-[#5A5A40]/30 animate-pulse">
+                  <Sparkles className="w-4 h-4 text-[#5A5A40] animate-spin" style={{ animationDuration: '3s' }} />
+                </div>
+
+                <div className="max-w-[85%] rounded-2xl px-5 py-4 bg-white border border-[#5A5A40]/40 text-[#3A3A35] shadow-md">
+                  <div className="flex items-center justify-between gap-4 mb-2.5 pb-1.5 border-b border-[#D6D5CD]/60 text-xs">
+                    <span className="font-semibold text-[#5A5A40] flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-ping" />
+                      Gemini Reflection Engine
+                    </span>
+                    <span className="text-[11px] text-[#73726B] font-mono">Synthesizing...</span>
+                  </div>
+
+                  <div className="space-y-2 py-1">
+                    <div className="flex items-center gap-2.5 text-sm text-[#5A5A40] font-medium">
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-[#5A5A40] animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                      <span className="text-xs sm:text-sm text-[#3A3A35] font-serif italic">
+                        Reflecting deeply on your thoughts...
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#73726B] font-sans pl-6">
+                      Formulating perspective, identifying insights, and organizing next steps.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -644,10 +720,25 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
         {/* Input Composer Box */}
         <form onSubmit={handleSubmit} className="relative mt-4">
           <div className="bg-white border-2 border-[#D6D5CD] focus-within:border-[#5A5A40] rounded-2xl shadow-xs transition-all overflow-hidden">
+            {/* In-Composer Active Reflection Status Bar */}
+            {isLoading && (
+              <div
+                id="composer-reflection-bar"
+                className="flex items-center justify-between px-4 py-2.5 bg-[#5A5A40]/10 border-b border-[#5A5A40]/25 text-xs text-[#5A5A40] font-medium animate-in fade-in"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-3.5 h-3.5 border-2 border-[#5A5A40] border-t-transparent rounded-full animate-spin shrink-0" />
+                  <span className="font-semibold">Gemini is actively reflecting on your entry...</span>
+                </div>
+                <span className="text-[11px] text-[#73726B] font-sans hidden sm:inline">Please wait a moment</span>
+              </div>
+            )}
+
             <textarea
               id="journal-entry-textarea"
               rows={messages.length === 0 ? 6 : 4}
               value={currentInput}
+              disabled={isLoading}
               onChange={(e) => setCurrentInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -656,11 +747,13 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
                 }
               }}
               placeholder={
-                messages.length === 0
+                isLoading
+                  ? 'Gemini is reflecting on your entry... your response will appear in a moment.'
+                  : messages.length === 0
                   ? "What's on your mind today? Write candidly about your achievements, challenges, decisions, or thoughts... (Ctrl+Enter to send)"
                   : 'Reply or ask a follow-up question to deepen the reflection... (Ctrl+Enter to send)'
               }
-              className="w-full p-4 text-[#3A3A35] placeholder:text-[#B5B4AC] focus:outline-none resize-y text-base font-sans leading-relaxed"
+              className="w-full p-4 text-[#3A3A35] placeholder:text-[#B5B4AC] focus:outline-none resize-y text-base font-sans leading-relaxed disabled:bg-[#FAF9F5] disabled:cursor-not-allowed"
             />
 
             <div className="flex items-center justify-between px-4 py-3 bg-[#F5F5F0] border-t border-[#D6D5CD]">
