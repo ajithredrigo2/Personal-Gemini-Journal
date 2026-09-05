@@ -38,25 +38,24 @@ import {
 // ---------------------------------------------------------------------------
 // Firebase client configuration
 //
-// Read from Vite build-time env vars (VITE_FIREBASE_*) or optional
-// firebase-applet-config.json.
+// Read only from Vite build-time environment variables (VITE_FIREBASE_*).
+// This keeps firebase-applet-config.json out of the source tree and avoids
+// Cloud Build failures when that legacy file is not present.
+//
+// These Firebase Web SDK values are browser configuration, not server-side
+// secrets. The Gemini API key remains backend-only in Secret Manager.
 // ---------------------------------------------------------------------------
 
-import appletConfigRaw from '../firebase-applet-config.json';
-const appletConfig: Record<string, string> = (appletConfigRaw as any)?.default || appletConfigRaw;
-
 const firebaseConfig = {
-  apiKey: appletConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: appletConfig?.authDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: appletConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: appletConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId:
-    appletConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: appletConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || '',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
-const FIRESTORE_DATABASE_ID =
-  appletConfig?.firestoreDatabaseId || import.meta.env.VITE_FIRESTORE_DATABASE_ID || '';
+const FIRESTORE_DATABASE_ID = import.meta.env.VITE_FIRESTORE_DATABASE_ID || '';
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey &&
@@ -1383,5 +1382,3 @@ export function subscribeToAuditLogs(
     }
   );
 }
-
-
