@@ -394,8 +394,55 @@ app.post('/api/gemini/reflect', async (req, res) => {
         'You are a Socratic coach and philosophical guide. Challenge assumptions gently, explore root causes, examine belief systems, and probe with incisive, transformative questions.',
     };
 
+const now = new Date();
+
+const currentDate = new Intl.DateTimeFormat('en-US', {
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  timeZone: 'Asia/Dubai',
+}).format(now);
+
+const currentTime = new Intl.DateTimeFormat('en-US', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+  timeZone: 'Asia/Dubai',
+}).format(now);
+
+
+
+
+
+
+
+
+
+
+
+
+
     const systemInstruction = `
 ${modePromptMap[mode] || modePromptMap.reflection}
+
+
+
+CURRENT DATE AND TIME CONTEXT:
+Current date: ${currentDate}
+Current time: ${currentTime}
+User timezone: Asia/Dubai
+
+
+
+
+
+
+
+
+
+
+
 
 The user's self-reported mood state is: "${mood}".
 
